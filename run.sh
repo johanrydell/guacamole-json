@@ -3,6 +3,8 @@
 # You must get this from the Guacamole service
 JSON_SECRET_KEY=$(podman exec -i guacamole printenv JSON_SECRET_KEY)
 
+JSON_CONFIG="./json-config"
+
 # Check the KEY
 if [[ "${JSON_SECRET_KEY}" =~ ^[a-fA-F0-9]{32}$ ]]; then
     echo "Valid 32-digit hex value."
@@ -13,7 +15,7 @@ fi
 
 PODMAN_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_CONFIG_DIR=/json-config "
 #PODMAN_ENV=" -e LOG_LEVEL=debug -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_CONFIG_DIR=/json-config "
-PODMAN_VOL=" -v ./json-config:/json-config "
+PODMAN_VOL=" -v ${JSON_CONFIG}:/json-config "
 
 
 # Read project name from project_config.json
