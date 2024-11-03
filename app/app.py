@@ -255,7 +255,7 @@ def process_json_data(json_data: dict, response: Response, request: Request):
 app = FastAPI()
 
 
-# Route for specific JSON file (e.g., GET /1.json)
+# Route for specific JSON file
 @app.get("/{filename}.json")
 async def get_file_by_name(filename: str, response: Response, request: Request):
     json_file = os.path.join(JSON_CONFIG_DIR, f"{filename}.json")
