@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 
 # Define a filter class
+# We do not want any password to end up in logs
 class SensitiveDataFilter(logging.Filter):
     def filter(self, record):
         # Regular expression to find and replace passwords
@@ -45,13 +46,15 @@ DEFAULT_TIMEOUT = int(os.getenv("DEFAULT_TIMEOUT", 3600 * 8))  # Default to 8 ho
 JSON_SECRET_KEY = os.getenv(
     "JSON_SECRET_KEY", "4C0B569E4C96DF157EEE1B65DD0E4D41"
 )  # The static key is the guacamole test key
+
 if not JSON_SECRET_KEY or len(JSON_SECRET_KEY) != 32:
     logger.error("Invalid or missing JSON_SECRET_KEY")
     raise ValueError("Invalid or missing JSON_SECRET_KEY.")
 JSON_CONFIG_DIR = os.getenv("JSON_CONFIG_DIR", "app")
 GUACAMOLE_URL = os.getenv(
-    "GUACAMOLE_URL", "http://172.16.2.127:8080"
-)  # Now configurable
+    "GUACAMOLE_URL", "http://127.0.0.1:8080"
+)  # Where should the use be redirected too?
+# Static postfix values of the guacamole server
 GUACAMOLE_TOKEN_URL = f"{GUACAMOLE_URL}/guacamole/api/tokens"
 GUACAMOLE_REDIRECT_URL = f"{GUACAMOLE_URL}/guacamole/#/"
 
@@ -104,6 +107,7 @@ def load_json_file(JSON_FILENAME):
 
 
 # Helper function to send POST request to Guacamole
+# We want the authToken
 def authenticate_with_guacamole(encrypted_data):
     try:
         post_data = {"data": encrypted_data}
@@ -136,7 +140,7 @@ def authenticate_with_guacamole(encrypted_data):
         raise
 
 
-# Helper function to find the first JSON file in the specified directory
+# Helper function to find the JSON files in the specified directory
 def find_json_files(directory):
     json_files = glob.glob(os.path.join(directory, "*.json"))
 
@@ -272,7 +276,7 @@ async def get_file_by_name(filename: str, response: Response, request: Request):
 
 
 # This gives you access to all specified 'connections' in any json file
-@app.get("/all")
+@app.get("/combined")
 async def get_all_configs(response: Response, request: Request):
     # Load the JSON data from all files
     json_data = all_unique_connections(JSON_CONFIG_DIR)
@@ -286,19 +290,29 @@ async def list_json_files():
     json_files = glob.glob(os.path.join(JSON_CONFIG_DIR, "*.json"))
     json_files.sort()  # Sorting the files alphabetically
 
-    # Create an HTML page listing all .json files with clickable links
-    html_content = "<h1>Configuration Files</h1><ul>"
-    for json_file in json_files:
-        file_name = os.path.basename(json_file)
-        file_name_without_extension = os.path.splitext(file_name)[0]
-        # Create a link to view each JSON file
-        html_content += (
-            f'<li><a href="/{file_name}">{file_name_without_extension}</a></li>'
-        )
-    html_content += "</ul>"
-    html_content += "<h2>You can ONLY use one at the time.</h2>"
-
-    html_content += '<p>Access to <a href="/all">all</a> configurations...'
+    # Check if there are JSON files available
+    if not json_files:
+        html_content = """
+            <h1>No Configuration Files Found</h1>
+            <p>No JSON configuration files were found in the directory.</p>
+            <p>Please refer to the
+            <a href="https://guacamole.apache.org/doc/gug/json-auth.html"
+            target="_blank"> Guacamole JSON Authentication documentation </a>
+            for details on setting up JSON configuration files.</p>
+        """
+    else:
+        # Create an HTML page listing all .json files with clickable links
+        html_content = "<h1>Configuration Files</h1><ul>"
+        for json_file in json_files:
+            file_name = os.path.basename(json_file)
+            file_name_without_extension = os.path.splitext(file_name)[0]
+            # Create a link to view each JSON file
+            html_content += (
+                f'<li><a href="/{file_name}">{file_name_without_extension}</a></li>'
+            )
+        html_content += "</ul>"
+        html_content += "<h2>You can ONLY use one at a time.</h2>"
+        html_content += '<p>Access to <a href="/combined">all</a> configurations...'
 
     return HTMLResponse(content=html_content)
 
