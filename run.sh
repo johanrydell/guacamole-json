@@ -7,8 +7,11 @@
 BACKGROUND=" -d "
 SHOW_LOGS=false
 BUILD_IMAGE=false
+ACTIVATE_SYSTEMD=false
 JSON_CONFIG_DIR="./json-config"
-
+GUACAMOLE_URL=http://172.16.2.127:8080
+CONTAINER_IMAGE=localhost/guacamole-json:latest
+CONTAINER_NAME=guacamole-json
 
 # Parse command-line options
 for arg in "$@"; do
@@ -21,16 +24,42 @@ for arg in "$@"; do
             SHOW_LOGS=true
             shift
             ;;
-	    --build*)
-	        BUILD_IMAGE=true
-	        shift
-	        ;;
+	--systemd)
+	    ACTIVATE_SYSTEMD=true
+	    ;;
+	--debug)
+	    LOG=" -e LOG_LEVEL=DEBUG "
+	    ;;
         *)
             echo "Unknown option: $arg"
             exit 1
             ;;
     esac
 done
+
+
+stop_systemd (){
+    local is_running=$(podman ps --format "{{.Names}}" | grep -c "^${CONTAINER_NAME}$")
+
+    if [ -r "$SYSTEMD/${CONTAINER_NAME}.service" ] && [ "$is_running" -ne 0 ]; then
+        systemctl --user stop "${CONTAINER_NAME}.service"
+        is_running=$(podman ps --format "{{.Names}}" | grep -c "^${CONTAINER_NAME}$")
+    fi
+
+    if [ "$is_running" -ne 0 ]; then
+        podman stop "${CONTAINER_NAME}"
+    fi
+
+    local is_present=$(podman ps -a --format "{{.Names}}" | grep -c "^${CONTAINER_NAME}$")
+    if [ "$is_present" -ne 0 ]; then
+        podman rm "${CONTAINER_NAME}"
+    fi
+}
+
+activate_systemd (){
+    ./generate-container.sh ${CONTAINER_NAME} --activate
+}
+
 
 # Retrieve JSON_SECRET_KEY from the running Guacamole container
 JSON_SECRET_KEY=$(podman exec -i guacamole printenv JSON_SECRET_KEY 2>/dev/null)
@@ -49,32 +78,19 @@ fi
 
 # Podman environment and volume options
 mkdir -p ${JSON_CONFIG_DIR}
-PODMAN_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_CONFIG_DIR=/json-config "
-PODMAN_VOL=" -v ${JSON_CONFIG_DIR}:/json-config "
-
-# Check if project_config.json exists and parse the project name
-if [[ ! -f project_config.json ]]; then
-    echo "project_config.json not found."
-    exit 1
-fi
-
-PROJECT_NAME=$(jq -r '.name' project_config.json 2>/dev/null)
-if [ -z "$PROJECT_NAME" ] || [ "$PROJECT_NAME" == "null" ]; then
-    echo "Failed to retrieve project name from project_config.json."
-    exit 1
-fi
-
-# Build the Podman image
-if [ "$BUILD_IMAGE" = true ]; then
-    echo "Building image for $PROJECT_NAME..."
-    podman build -t $PROJECT_NAME .
-fi
+CONTAINER_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_CONFIG_DIR=/json-config -e GUACAMOLE_URL=${GUACAMOLE_URL} ${LOG} "
+CONTAINER_VOL=" -v ${JSON_CONFIG_DIR}:/json-config "
 
 # Run the Podman container
 echo "Running container for $PROJECT_NAME..."
-podman run ${BACKGROUND} --rm --replace --name $PROJECT_NAME ${PODMAN_ENV} ${PODMAN_VOL} -p 8000:8000 localhost/$PROJECT_NAME:latest
+stop_systemd
+podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${CONTAINER_ENV} ${CONTAINER_VOL} -p 8000:8000 ${CONTAINER_IMAGE}
 
+if [ "$ACTIVATE_SYSTEMD" = true ] && [ ! -z "${BACKGROUND}" ] ; then
+    activate_systemd
+fi
+    
 # Display logs if --log is specified
 if [ "$SHOW_LOGS" = true ] && [ ! -z "${BACKGROUND}" ] ; then
-    podman logs -f $PROJECT_NAME
+    podman logs -f $CONTAINER_NAME
 fi
