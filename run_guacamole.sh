@@ -5,6 +5,7 @@
 # Default values
 GUACD_HOSTNAME="${GUACD_HOSTNAME:-guacd}"
 PODMAN_IMAGE="${PODMAN_IMAGE:-docker.io/guacamole/guacamole:latest}"
+PODMAN_NAME="guacamole"
 BACKGROUND=" -d "
 
 # Check for interactive mode
@@ -25,6 +26,9 @@ fi
 PODMAN_ENV=" -e BAN_ENABLED=false -e JSON_ENABLED=true -e GUACD_HOSTNAME=${GUACD_HOSTNAME} -e JSON_SECRET_KEY=${JSON_SECRET_KEY} "
 
 # Run the container
-podman run ${BACKGROUND} --rm --replace -p 8080:8080 --name guacamole ${PODMAN_ENV} ${PODMAN_IMAGE}
+podman run ${BACKGROUND} --rm --replace -p 8080:8080 --name ${PODMAN_NAME} ${PODMAN_ENV} ${PODMAN_IMAGE}
 
 
+if [ "$1" = "--activate" ]; then
+    ./activate-container.sh ${PODMAN_NAME}
+fi

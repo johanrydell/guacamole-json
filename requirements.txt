@@ -2,3 +2,5 @@ fastapi
 uvicorn	
 pycryptodome
 requests
+cryptography
+pyopenssl

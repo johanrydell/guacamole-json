@@ -6,14 +6,26 @@ import json
 import logging
 import os
 import re
+import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 import uvicorn
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
-from fastapi import FastAPI, Request, Response
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+)
+from cryptography.x509.oid import NameOID
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 
 # Define a filter class
@@ -57,6 +69,87 @@ GUACAMOLE_URL = os.getenv(
 # Static postfix values of the guacamole server
 GUACAMOLE_TOKEN_URL = f"{GUACAMOLE_URL}/guacamole/api/tokens"
 GUACAMOLE_REDIRECT_URL = f"{GUACAMOLE_URL}/guacamole/#/"
+
+
+def generate_self_signed_cert():
+    # Generate RSA key
+    key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+    )
+
+    # Generate self-signed certificate
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "California"),
+            x509.NameAttribute(NameOID.LOCALITY_NAME, "San Francisco"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Example Inc"),
+            x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
+        ]
+    )
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.now(timezone.utc))
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.DNSName("localhost")]),
+            critical=False,
+        )
+        .sign(key, hashes.SHA256())
+    )
+
+    # Serialize certificate and key to PEM format
+    cert_pem = cert.public_bytes(Encoding.PEM)
+    key_pem = key.private_bytes(
+        Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()
+    )
+
+    return cert_pem, key_pem
+
+
+def generate_and_run_temp_tls():
+    # Generate self-signed certificate and key
+    cert_pem, key_pem = generate_self_signed_cert()
+
+    # Write cert and key to temporary files
+    with tempfile.NamedTemporaryFile(
+        delete=False
+    ) as cert_file, tempfile.NamedTemporaryFile(delete=False) as key_file:
+        cert_file.write(cert_pem)
+        key_file.write(key_pem)
+        cert_file_path = cert_file.name
+        key_file_path = key_file.name
+
+    try:
+        # Start Uvicorn with the temporary certificate and key
+        uvicorn.run(
+            "app:app",
+            host="0.0.0.0",
+            port=8000,
+            ssl_certfile=cert_file_path,
+            ssl_keyfile=key_file_path,
+        )
+    finally:
+        # Clean up temporary files
+        os.unlink(cert_file_path)
+        os.unlink(key_file_path)
+
+
+def run_with_provided_tls(key, cert, chain=None):
+    # Start Uvicorn with provided certificate and key
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=8000,
+        ssl_keyfile=key,
+        ssl_certfile=cert,
+        ssl_ca_certs=chain,
+    )
 
 
 # Function to sign the file using HMAC/SHA-256
@@ -258,6 +351,9 @@ def process_json_data(json_data: dict, response: Response, request: Request):
 # FastAPI app
 app = FastAPI()
 
+# Initialize Basic Authentication
+security = HTTPBasic()
+
 
 # Route for specific JSON file
 @app.get("/{filename}.json")
@@ -317,27 +413,27 @@ async def list_json_files():
     return HTMLResponse(content=html_content)
 
 
+@app.get("/basic")
+def read_root(credentials: HTTPBasicCredentials = Depends(security)):
+    # Extract username and password
+    username = credentials.username
+    password = credentials.password
+
+    # Log the username and password
+    logging.info(f"Username: {username}, Password: {password}")
+
+    # Return a response
+    return {"message": f"Welcome, {username}!"}
+
+
 if __name__ == "__main__":
     key = os.getenv("TLS_KEY")
     cert = os.getenv("TLS_CERT")
     chain = os.getenv("TLS_CHAIN")
 
-    if key and cert and chain:
-        uvicorn.run(
-            "app:app",
-            host="0.0.0.0",
-            port=4443,
-            ssl_keyfile=key,  # Use the variable for key path
-            ssl_certfile=cert,  # Use the variable for cert path
-            ssl_ca_certs=chain,  # Use the variable for chain path
-        )
-    elif key and cert:
-        uvicorn.run(
-            "app:app",
-            host="0.0.0.0",
-            port=4443,
-            ssl_keyfile=key,  # Use the variable for key path
-            ssl_certfile=cert,  # Use the variable for cert path
-        )
+    if key and cert:
+        # Run with provided TLS settings
+        run_with_provided_tls(key, cert, chain)
     else:
-        uvicorn.run("app:app", host="0.0.0.0", port=8000)
+        # Fallback to self-signed certificate
+        generate_and_run_temp_tls()

@@ -1,10 +1,21 @@
 #!/bin/bash
 #
-# Make sure your container is running with 
+# Update a running container tu use systemd via "container spec"
 #
+ACTIVATE_SYSTEMD=true
 
-# Name of the running container passed as an argument
-CONTAINER_NAME="$1"
+# Parse command-line options
+for arg in "$@"; do
+    case $arg in
+        --no-activate)
+            ACTIVATE_SYSTEMD=false
+            shift
+            ;;
+        *)
+           CONTAINER_NAME="$arg"
+            ;;
+    esac
+done
 
 # Check if the container name is provided
 if [[ -z "$CONTAINER_NAME" ]]; then
@@ -40,7 +51,7 @@ stop() {
 }
 
 #
-# Volume
+# Create the spec. for volumes
 #
 volume(){
     mounts=$(podman inspect --format '{{json .Mounts}}' "${CONTAINER_NAME}")
@@ -157,32 +168,32 @@ EOF
 # Check if the second argument is provided and equals "--activate"
 #
 activate() {
-    if [[ "$2" == "--activate" ]]; then
-	# Stop the service or podman container
-	stop
-
-	echo "Turning this into a systemd service: ${CONTAINER_NAME}.service"
-	mkdir -p $CONTAINERD $SYSTEMD
-	
-	cp $CONTAINER_FILE $CONTAINERD/.
-	
-	# Creat the systemd files
-	/usr/libexec/podman/quadlet -user -v  $SYSTEMD
-	
-	# reload the daemon
-	systemctl --user daemon-reload
-	systemctl --user enable ${CONTAINER_NAME}.service
-	systemctl --user start ${CONTAINER_NAME}.service
-	rm $CONTAINER_FILE
-	echo "The new service is installed and running."
-    else
-	echo "You can create and enable ${CONTAINER_NAME} as a systemd service."
-	echo "Use the argument --activate"
-    fi
+    # Stop the service or podman container
+    stop
+    
+    echo "Turning this into a systemd service: ${CONTAINER_NAME}.service"
+    mkdir -p $CONTAINERD $SYSTEMD
+    
+    cp $CONTAINER_FILE $CONTAINERD/.
+    
+    # Creat the systemd files
+    /usr/libexec/podman/quadlet -user -v  $SYSTEMD
+    
+    # reload the daemon
+    systemctl --user daemon-reload
+    systemctl --user enable ${CONTAINER_NAME}.service
+    systemctl --user start ${CONTAINER_NAME}.service
+    rm $CONTAINER_FILE
+    echo "The new service is installed and activated."
 }
 
+
 create_file
-activate $@
+
+# Display logs if --log is specified
+if [ "$ACTIVATE_SYSTEMD" = true ]; then
+    activate 
+fi
 
 #
 # Use this to remove hardcoded user directories

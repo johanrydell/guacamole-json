@@ -24,7 +24,7 @@ for arg in "$@"; do
             SHOW_LOGS=true
             shift
             ;;
-	--systemd)
+	--activate)
 	    ACTIVATE_SYSTEMD=true
 	    ;;
 	--debug)
@@ -57,7 +57,7 @@ stop_systemd (){
 }
 
 activate_systemd (){
-    ./generate-container.sh ${CONTAINER_NAME} --activate
+    ./activate-container.sh ${CONTAINER_NAME}
 }
 
 

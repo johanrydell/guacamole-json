@@ -4,6 +4,7 @@
 
 # Default values
 PODMAN_IMAGE="${PODMAN_IMAGE:-docker.io/guacamole/guacd:latest}"
+PODMAN_NAME="guacd"
 BACKGROUND=" -d "
 
 # Check for interactive mode
@@ -19,6 +20,9 @@ fi
 
 # Run the container
 echo "Starting Guacamole guacd service with Podman..."
-podman run ${BACKGROUND} --rm --replace -p 4822:4822 --name guacd ${PODMAN_IMAGE}
+podman run ${BACKGROUND} --rm --replace -p 4822:4822 --name ${PODMAN_NAME} ${PODMAN_IMAGE}
 
+if [ "$1" = "--activate" ]; then
+    ./activate-container.sh ${PODMAN_NAME}
+fi
 
