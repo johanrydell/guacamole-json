@@ -28,12 +28,22 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 
-# Define a filter class
-# We do not want any password to end up in logs
 class SensitiveDataFilter(logging.Filter):
     def filter(self, record):
-        # Regular expression to find and replace passwords
-        record.msg = re.sub(r'("password":\s*")([^"]+)(")', r"\1****\3", record.msg)
+        # Ensure the message is a string before applying the regex
+        if isinstance(record.msg, dict):
+            record.msg = json.dumps(record.msg)  # Convert dict to string for filtering
+        elif not isinstance(record.msg, str):
+            record.msg = str(record.msg)  # Convert other types to string
+
+        # Regular expression to find and replace passwords in double-quoted
+        # and single-quoted formats
+        record.msg = re.sub(
+            r'("password":\s*")([^"]+)(")', r"\1****\3", record.msg
+        )  # Handles double quotes
+        record.msg = re.sub(
+            r"(\'password\':\s*\')([^\']+)(\')", r"\1****\3", record.msg
+        )  # Handles single quotes
         return True
 
 
@@ -41,15 +51,16 @@ class SensitiveDataFilter(logging.Filter):
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=getattr(logging, log_level))
 
-# Get the root logger
-logger = logging.getLogger(__name__)
+# Apply the SensitiveDataFilter globally
+sensitive_filter = SensitiveDataFilter()
 
-# Create a filter and add it to the existing handlers (if needed)
-filter = SensitiveDataFilter()
+# Add the filter to the root logger
+root_logger = logging.getLogger()
+for handler in root_logger.handlers:
+    handler.addFilter(sensitive_filter)
 
-# Add the filter to all handlers that might be configured
-for handler in logger.handlers:
-    handler.addFilter(filter)
+# Loggers can now use the global filter
+logger = logging.getLogger("app")
 
 
 # Constants (now configurable through environment variables)
@@ -69,6 +80,12 @@ GUACAMOLE_URL = os.getenv(
 # Static postfix values of the guacamole server
 GUACAMOLE_TOKEN_URL = f"{GUACAMOLE_URL}/guacamole/api/tokens"
 GUACAMOLE_REDIRECT_URL = f"{GUACAMOLE_URL}/guacamole/#/"
+
+# Read the BASIC parameter from the environment
+USE_BASIC_AUTH = os.getenv("BASIC", "false").lower() == "true"
+
+# Initialize Basic Authentication
+security = HTTPBasic()
 
 
 def generate_self_signed_cert():
@@ -295,7 +312,9 @@ def update_timeout(json_data, default_timeout):
 
 # Refactored function to handle the common flow for loading,
 # signing, encrypting, and authentication
-def process_json_data(json_data: dict, response: Response, request: Request):
+def process_json_data(
+    json_data: dict, response: Response, request: Request, credentials: tuple
+):
     try:
         # Update timeout
         json_with_timeout = update_timeout(json_data, DEFAULT_TIMEOUT)
@@ -307,10 +326,14 @@ def process_json_data(json_data: dict, response: Response, request: Request):
             logger.debug(f"Updating username with WA_UID cookie: {wa_uid}")
             json_with_timeout["username"] = wa_uid
 
-        # Handle additional headers
-        wa_username = request.headers.get("WA_USERNAME")
-        wa_password = request.headers.get("WA_PASSWORD")
-        wa_domain = request.headers.get("WA_DOMAIN")
+        # Handle additional headers and basic_authorization
+        if USE_BASIC_AUTH:
+            wa_username, wa_password = credentials
+            wa_domain = None
+        else:
+            wa_username = request.headers.get("WA_USERNAME")
+            wa_password = request.headers.get("WA_PASSWORD")
+            wa_domain = request.headers.get("WA_DOMAIN")
 
         if wa_username or wa_password or wa_domain:
             logger.debug(
@@ -348,16 +371,29 @@ def process_json_data(json_data: dict, response: Response, request: Request):
         return {"error": str(e)}
 
 
+def authenticate_user(credentials: HTTPBasicCredentials = Depends(security)):
+    # Extract username and password
+    username = credentials.username
+    password = credentials.password
+
+    # Log both username and password
+    logging.info(f"Username: {username}, Password: {password}")
+
+    return username, password
+
+
 # FastAPI app
 app = FastAPI()
-
-# Initialize Basic Authentication
-security = HTTPBasic()
 
 
 # Route for specific JSON file
 @app.get("/{filename}.json")
-async def get_file_by_name(filename: str, response: Response, request: Request):
+async def get_file_by_name(
+    filename: str,
+    response: Response,
+    request: Request,
+    credentials: tuple = Depends(authenticate_user) if USE_BASIC_AUTH else None,
+):
     json_file = os.path.join(JSON_CONFIG_DIR, f"{filename}.json")
     if not os.path.exists(json_file):
         logger.error(f"File {filename}.json not in directory.")
@@ -368,16 +404,35 @@ async def get_file_by_name(filename: str, response: Response, request: Request):
     # Load the JSON data from file
     json_data = load_json_file(json_file)
 
-    return process_json_data(json_data, response, request)
+    return process_json_data(json_data, response, request, credentials)
 
 
 # This gives you access to all specified 'connections' in any json file
 @app.get("/combined")
-async def get_all_configs(response: Response, request: Request):
+async def get_all_configs(
+    response: Response,
+    request: Request,
+    credentials: tuple = Depends(authenticate_user) if USE_BASIC_AUTH else None,
+):
     # Load the JSON data from all files
     json_data = all_unique_connections(JSON_CONFIG_DIR)
 
-    return process_json_data(json_data, response, request)
+    return process_json_data(json_data, response, request, credentials)
+
+
+@app.get("/basic")
+def test_basic_auth(
+    credentials: tuple = Depends(authenticate_user) if USE_BASIC_AUTH else None,
+):
+    if USE_BASIC_AUTH:
+        username, password = credentials
+        return {
+            "message": f"Welcome, {username}!",
+            "username": username,
+            # "password": password,
+        }
+    else:
+        return {"message": "Basic Authentication is not enabled"}
 
 
 # GET request handler for '/' to list all JSON files
@@ -413,19 +468,6 @@ async def list_json_files():
     return HTMLResponse(content=html_content)
 
 
-@app.get("/basic")
-def read_root(credentials: HTTPBasicCredentials = Depends(security)):
-    # Extract username and password
-    username = credentials.username
-    password = credentials.password
-
-    # Log the username and password
-    logging.info(f"Username: {username}, Password: {password}")
-
-    # Return a response
-    return {"message": f"Welcome, {username}!"}
-
-
 if __name__ == "__main__":
     key = os.getenv("TLS_KEY")
     cert = os.getenv("TLS_CERT")
@@ -435,5 +477,6 @@ if __name__ == "__main__":
         # Run with provided TLS settings
         run_with_provided_tls(key, cert, chain)
     else:
+        print(f"SSO: {USE_BASIC_AUTH}")
         # Fallback to self-signed certificate
         generate_and_run_temp_tls()

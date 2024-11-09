@@ -4,3 +4,4 @@ pycryptodome
 requests
 cryptography
 pyopenssl
+python-multipart

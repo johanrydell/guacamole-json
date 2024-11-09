@@ -78,7 +78,7 @@ fi
 
 # Podman environment and volume options
 mkdir -p ${JSON_CONFIG_DIR}
-CONTAINER_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_CONFIG_DIR=/json-config -e GUACAMOLE_URL=${GUACAMOLE_URL} ${LOG} "
+CONTAINER_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_CONFIG_DIR=/json-config -e GUACAMOLE_URL=${GUACAMOLE_URL} ${LOG} -e BASIC=true "
 CONTAINER_VOL=" -v ${JSON_CONFIG_DIR}:/json-config "
 
 # Run the Podman container
