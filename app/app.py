@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives.serialization import (
     PrivateFormat,
 )
 from cryptography.x509.oid import NameOID
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
@@ -47,7 +47,7 @@ class SensitiveDataFilter(logging.Filter):
         return True
 
 
-# Configure logging
+# Configure logging - Default is "INFO"
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=getattr(logging, log_level))
 
@@ -80,6 +80,9 @@ GUACAMOLE_URL = os.getenv(
 # Static postfix values of the guacamole server
 GUACAMOLE_TOKEN_URL = f"{GUACAMOLE_URL}/guacamole/api/tokens"
 GUACAMOLE_REDIRECT_URL = f"{GUACAMOLE_URL}/guacamole/#/"
+
+# Port
+PORT = os.getenv("PORT", 8000)
 
 # Read the BASIC parameter from the environment
 USE_BASIC_AUTH = os.getenv("BASIC", "false").lower() == "true"
@@ -147,7 +150,7 @@ def generate_and_run_temp_tls():
         uvicorn.run(
             "app:app",
             host="0.0.0.0",
-            port=8000,
+            port=PORT,
             ssl_certfile=cert_file_path,
             ssl_keyfile=key_file_path,
         )
@@ -162,7 +165,7 @@ def run_with_provided_tls(key, cert, chain=None):
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
-        port=8000,
+        port=PORT,
         ssl_keyfile=key,
         ssl_certfile=cert,
         ssl_ca_certs=chain,
@@ -312,9 +315,7 @@ def update_timeout(json_data, default_timeout):
 
 # Refactored function to handle the common flow for loading,
 # signing, encrypting, and authentication
-def process_json_data(
-    json_data: dict, response: Response, request: Request, credentials: tuple
-):
+def process_json_data(json_data: dict, request: Request, credentials: tuple):
     try:
         # Update timeout
         json_with_timeout = update_timeout(json_data, DEFAULT_TIMEOUT)
@@ -336,10 +337,8 @@ def process_json_data(
             wa_domain = request.headers.get("WA_DOMAIN")
 
         if wa_username or wa_password or wa_domain:
-            logger.debug(
-                f"Received credentials: {wa_username}, {wa_password}, {wa_domain}"
-            )
-            # Update 'parameters' in JSON data
+            logger.debug(f"Received credentials: {wa_username}, ****, {wa_domain}")
+            # Update 'parameters' in JSON data, but ONLY is "sso": "true" is present
             for connection, details in json_with_timeout.get("connections", {}).items():
                 if (
                     "parameters" in details
@@ -390,7 +389,6 @@ app = FastAPI()
 @app.get("/{filename}.json")
 async def get_file_by_name(
     filename: str,
-    response: Response,
     request: Request,
     credentials: tuple = Depends(authenticate_user) if USE_BASIC_AUTH else None,
 ):
@@ -404,20 +402,19 @@ async def get_file_by_name(
     # Load the JSON data from file
     json_data = load_json_file(json_file)
 
-    return process_json_data(json_data, response, request, credentials)
+    return process_json_data(json_data, request, credentials)
 
 
 # This gives you access to all specified 'connections' in any json file
 @app.get("/combined")
 async def get_all_configs(
-    response: Response,
     request: Request,
     credentials: tuple = Depends(authenticate_user) if USE_BASIC_AUTH else None,
 ):
     # Load the JSON data from all files
     json_data = all_unique_connections(JSON_CONFIG_DIR)
 
-    return process_json_data(json_data, response, request, credentials)
+    return process_json_data(json_data, request, credentials)
 
 
 @app.get("/basic")
@@ -477,6 +474,5 @@ if __name__ == "__main__":
         # Run with provided TLS settings
         run_with_provided_tls(key, cert, chain)
     else:
-        print(f"SSO: {USE_BASIC_AUTH}")
         # Fallback to self-signed certificate
         generate_and_run_temp_tls()
