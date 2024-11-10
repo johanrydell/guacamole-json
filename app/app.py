@@ -28,6 +28,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 
+#
+# We have to remove the password from any logs
+# The best way is to do a filter for the log class
+#
 class SensitiveDataFilter(logging.Filter):
     def filter(self, record):
         # Ensure the message is a string before applying the regex
@@ -81,16 +85,18 @@ GUACAMOLE_URL = os.getenv(
 GUACAMOLE_TOKEN_URL = f"{GUACAMOLE_URL}/guacamole/api/tokens"
 GUACAMOLE_REDIRECT_URL = f"{GUACAMOLE_URL}/guacamole/#/"
 
-# Port
+# Uvicorn port
 PORT = os.getenv("PORT", 8000)
 
 # Read the BASIC parameter from the environment
+# This will require basic authorization for any URL except '/'
 USE_BASIC_AUTH = os.getenv("BASIC", "false").lower() == "true"
 
 # Initialize Basic Authentication
 security = HTTPBasic()
 
 
+# No more unsecure HTTP
 def generate_self_signed_cert():
     # Generate RSA key
     key = rsa.generate_private_key(
@@ -132,6 +138,8 @@ def generate_self_signed_cert():
     return cert_pem, key_pem
 
 
+# This is the server when no TLS certificates was presented
+# selfsigned certificates are created
 def generate_and_run_temp_tls():
     # Generate self-signed certificate and key
     cert_pem, key_pem = generate_self_signed_cert()
@@ -160,6 +168,7 @@ def generate_and_run_temp_tls():
         os.unlink(key_file_path)
 
 
+# The normal way to run Uvicorn with provided certificates
 def run_with_provided_tls(key, cert, chain=None):
     # Start Uvicorn with provided certificate and key
     uvicorn.run(
