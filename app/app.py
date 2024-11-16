@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 import time
+import warnings
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -26,6 +27,7 @@ from cryptography.x509.oid import NameOID
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from urllib3.exceptions import InsecureRequestWarning
 
 
 #
@@ -50,6 +52,9 @@ class SensitiveDataFilter(logging.Filter):
         )  # Handles single quotes
         return True
 
+
+# Remove TLS warning messages
+warnings.filterwarnings("ignore", category=InsecureRequestWarning)
 
 # Configure logging - Default is "INFO"
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()

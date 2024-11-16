@@ -10,6 +10,7 @@ BUILD_IMAGE=false
 ACTIVATE_SYSTEMD=false
 JSON_CONFIG_DIR="./json-config"
 GUACAMOLE_URL=http://172.16.2.127:8080
+GUACAMOLE_URL=https://172.16.2.127:18443
 CONTAINER_IMAGE=localhost/guacamole-json:latest
 CONTAINER_NAME=guacamole-json
 SSO="false"

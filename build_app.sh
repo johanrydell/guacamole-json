@@ -39,6 +39,6 @@ fi
 
 ARGS=$(echo "$@" | sed 's/--buildonly//g')
 
-./run.sh $ARGS
+./run_app.sh $ARGS
 
 
