@@ -9,7 +9,7 @@ BUILD_ONLY=false
 # Parse command-line options
 for arg in "$@"; do
     case $arg in
-	--buildonly)
+	--build*)
 	    BUILD_IMAGE=true
 	    shift
 	    ;;
@@ -34,6 +34,7 @@ podman build -t $PROJECT_NAME .
 
 # Build the Podman image
 if [ "$BUILD_IMAGE" = true ]; then
+    echo "Building the image has finished"
     exit 0
 fi
 
