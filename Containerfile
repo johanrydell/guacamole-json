@@ -1,13 +1,26 @@
 FROM python:3.12-slim
 
-# Install FastAPI and Uvicorn
-COPY requirements.txt /app/
+# Set the working directory inside the container
 WORKDIR /app
-RUN pip install -r requirements.txt
 
-# Copy app code into container
-COPY app/. /app/
+# Copy requirements file first to leverage Docker caching
+COPY requirements.txt /app/
 
-# Run Uvicorn server
-#CMD ["uvicorn", "app.app:app", "--host", "0.0.0.0", "--port", "8000"]
-CMD ["python", "app.py"]
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code and logging configuration
+COPY app /app/
+COPY log_config.yaml /app/
+
+# Add a non-root user
+RUN groupadd -r appuser && useradd --no-log-init -r -g appuser appuser
+
+# Change ownership of the application files
+RUN chown -R appuser:appuser /app
+
+# Switch to the non-root user
+USER appuser
+
+# Run the application
+CMD ["python", "run.py"]

@@ -18,8 +18,8 @@ BACKGROUND=" -d "
 SHOW_LOGS=false
 BUILD_IMAGE=false
 ACTIVATE_SYSTEMD=false
-JSON_CONFIG_DIR="./json-config"
-GUACAMOLE_URL=https://172.16.2.127:18443
+JSON_CONFIG_DIR="${HOME}/guacamole-json-service/files"
+GUACAMOLE_URL=http://172.16.2.81:8080
 CONTAINER_IMAGE=localhost/guacamole-json:latest
 CONTAINER_NAME=guacamole-json
 SSO="false"
@@ -123,10 +123,27 @@ mkdir -p ${JSON_CONFIG_DIR}
 CONTAINER_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_CONFIG_DIR=/json-config -e GUACAMOLE_URL=${GUACAMOLE_URL} ${LOG} -e BASIC=${SSO} "
 CONTAINER_VOL=" -v ${JSON_CONFIG_DIR}:/json-config "
 
+
+TLS_LOCAL_DIR="${HOME}/certs"
+TLS_MOUNT="/certs"
+TLS_CERT="${TLS_MOUNT}/fullchain.pem"
+TLS_KEY="${TLS_MOUNT}/privkey.pem"
+TLS_ENV=""
+
+# Verify TLS certificates exist
+if [ ! -f "${TLS_LOCAL_DIR}/fullchain.pem" ] || [ ! -f "${TLS_LOCAL_DIR}/privkey.pem" ]; then
+    log "TLS certificates not found in ${TLS_LOCAL_DIR}."
+else
+    log "Using provided certificates and key from ${TLS_LOCAL_DIR}."
+    TLS_ENV=" -e TLS_CERT=${TLS_CERT} -e TLS_KEY=${TLS_KEY} -v ${TLS_LOCAL_DIR}:${TLS_MOUNT}:ro "
+fi
+
+
+
 # Run the Podman container
 log "Running container ${CONTAINER_NAME}..."
 stop_systemd
-podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${CONTAINER_ENV} ${CONTAINER_VOL} -p 8000:8000 ${CONTAINER_IMAGE} || error "Failed to start container ${CONTAINER_NAME}."
+podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p 8000:8000 ${CONTAINER_IMAGE} || error "Failed to start container ${CONTAINER_NAME}."
 
 # Activate systemd if requested
 if [ "$ACTIVATE_SYSTEMD" = true ] && [ ! -z "${BACKGROUND}" ]; then
