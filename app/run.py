@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+from typing import Optional
 
 import uvicorn
 from cert_utils import generate_self_signed_cert
@@ -8,8 +9,6 @@ from config import load_config
 from logging_config import setup_logging
 from main import app
 from signal_handlers import setup_signal_handlers
-
-from utils import validate_file_path
 
 # Setup logging
 setup_logging()
@@ -21,7 +20,14 @@ config = load_config()
 # Setup signal handlers
 setup_signal_handlers()
 
-TLS_LOG_CONFIG = validate_file_path(config["TLS_LOG_CONFIG"])
+
+def validate_file_path(
+    file_path: Optional[str], file_type: str = "file"
+) -> Optional[str]:
+    if not file_path or not os.path.exists(file_path):
+        logger.error(f"Invalid {file_type}: {file_path}")
+        return None
+    return file_path
 
 
 # Run with self-signed certificates
@@ -42,7 +48,7 @@ def generate_and_run_temp_tls():
             host="0.0.0.0",
             port=config["TLS_PORT"],
             log_level=config["TLS_LOG_LEVEL"],
-            log_config=TLS_LOG_CONFIG,
+            log_config=None,
             ssl_certfile=cert_file_path,
             ssl_keyfile=key_file_path,
         )
@@ -69,7 +75,7 @@ def run_with_provided_tls(key, cert, chain=None):
         host="0.0.0.0",
         port=config["TLS_PORT"],
         log_level=config["TLS_LOG_LEVEL"],
-        log_config=TLS_LOG_CONFIG,
+        log_config=None,
         ssl_keyfile=key,
         ssl_certfile=cert,
     )

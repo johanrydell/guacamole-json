@@ -15,7 +15,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 # Loggers can now use the global filter
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 # Initialize Basic Authentication
 security = HTTPBasic()
@@ -30,7 +30,7 @@ JSON_SECRET_KEY = os.getenv(
 if not JSON_SECRET_KEY or len(JSON_SECRET_KEY) != 32:
     logger.error("Invalid or missing JSON_SECRET_KEY")
     raise ValueError("Invalid or missing JSON_SECRET_KEY.")
-JSON_CONFIG_DIR = os.getenv("JSON_CONFIG_DIR", "app")
+JSON_CONFIG_DIR = os.getenv("JSON_CONFIG_DIR", ".")
 GUACAMOLE_URL = os.getenv(
     "GUACAMOLE_URL", "http://127.0.0.1:8080"
 )  # Where should the use be redirected too?
@@ -41,7 +41,7 @@ GUACAMOLE_REDIRECT_URL = f"{GUACAMOLE_URL}/guacamole/#/"
 
 # Read the BASIC parameter from the environment
 # This will require basic authorization for any URL except '/'
-USE_BASIC_AUTH = os.getenv("BASIC", "false").lower() == "true"
+USE_BASIC_AUTH = os.getenv("SSO", "true").lower() == "true"
 
 
 # Function to sign the file using HMAC/SHA-256

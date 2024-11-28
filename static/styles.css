@@ -1,0 +1,18 @@
+body {
+    background-color: #f8f9fa;
+    font-family: 'Arial', sans-serif;
+}
+
+h1 {
+    color: #007bff;
+}
+
+ul.list-group li {
+    transition: transform 0.2s;
+}
+
+ul.list-group li:hover {
+    transform: scale(1.02);
+    background-color: #e9ecef;
+}
+

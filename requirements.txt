@@ -6,3 +6,4 @@ cryptography
 pyopenssl
 python-multipart
 PyYAML
+jinja2

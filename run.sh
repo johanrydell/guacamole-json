@@ -22,8 +22,16 @@ JSON_CONFIG_DIR="${HOME}/guacamole-json-service/files"
 GUACAMOLE_URL=http://172.16.2.81:8080
 CONTAINER_IMAGE=localhost/guacamole-json:latest
 CONTAINER_NAME=guacamole-json
-SSO="false"
+SSO="true"
 CUSTOM_KEY=""
+
+# TLS
+TLS_LOCAL_DIR="${HOME}/certs"
+TLS_MOUNT="/certs"
+TLS_CERT="${TLS_MOUNT}/fullchain.pem"
+TLS_KEY="${TLS_MOUNT}/privkey.pem"
+TLS_ENV=""
+
 
 # Parse command-line options
 for arg in "$@"; do
@@ -44,8 +52,8 @@ for arg in "$@"; do
             LOG=" -e LOG_LEVEL=DEBUG "
             shift
             ;;
-        --sso)
-            SSO="true"
+        --no-sso)
+            SSO="false"
             shift
             ;;
         --key=*)
@@ -64,7 +72,7 @@ for arg in "$@"; do
             echo "  --log               Show container logs after starting."
             echo "  --activate          Activate systemd service after starting the container."
             echo "  --debug             Set log level to DEBUG."
-            echo "  --sso               Enable single sign-on mode."
+            echo "  --no-sso            Disable single sign-on mode."
             echo "  --help, -h          Show this help message."
             exit 0
             ;;
@@ -123,21 +131,13 @@ mkdir -p ${JSON_CONFIG_DIR}
 CONTAINER_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_CONFIG_DIR=/json-config -e GUACAMOLE_URL=${GUACAMOLE_URL} ${LOG} -e BASIC=${SSO} "
 CONTAINER_VOL=" -v ${JSON_CONFIG_DIR}:/json-config "
 
-
-TLS_LOCAL_DIR="${HOME}/certs"
-TLS_MOUNT="/certs"
-TLS_CERT="${TLS_MOUNT}/fullchain.pem"
-TLS_KEY="${TLS_MOUNT}/privkey.pem"
-TLS_ENV=""
-
 # Verify TLS certificates exist
-if [ ! -f "${TLS_LOCAL_DIR}/fullchain.pem" ] || [ ! -f "${TLS_LOCAL_DIR}/privkey.pem" ]; then
-    log "TLS certificates not found in ${TLS_LOCAL_DIR}."
-else
+if [ -f "${TLS_LOCAL_DIR}/fullchain.pem" ] && [ -f "${TLS_LOCAL_DIR}/privkey.pem" ]; then
     log "Using provided certificates and key from ${TLS_LOCAL_DIR}."
     TLS_ENV=" -e TLS_CERT=${TLS_CERT} -e TLS_KEY=${TLS_KEY} -v ${TLS_LOCAL_DIR}:${TLS_MOUNT}:ro "
+else
+    log "TLS certificates not found in ${TLS_LOCAL_DIR}."
 fi
-
 
 
 # Run the Podman container

@@ -1,7 +1,6 @@
 import json
 import logging
-import os
-import pwd
+import logging.config
 import re
 
 
@@ -11,42 +10,78 @@ import re
 #
 class SensitiveDataFilter(logging.Filter):
     def filter(self, record):
-        # Ensure the message is a string before applying the regex
+        # Convert message to string if necessary
         if isinstance(record.msg, dict):
-            record.msg = json.dumps(record.msg)  # Convert dict to string for filtering
+            record.msg = json.dumps(record.msg)
         elif not isinstance(record.msg, str):
-            record.msg = str(record.msg)  # Convert other types to string
+            record.msg = str(record.msg)
 
-        # Regular expression to find and replace passwords in double-quoted
-        # and single-quoted formats
-        record.msg = re.sub(
-            r'("password":\s*")([^"]+)(")', r"\1****\3", record.msg
-        )  # Handles double quotes
+        # Redact sensitive data in the main message
+        record.msg = re.sub(r'("password":\s*")([^"]+)(")', r"\1****\3", record.msg)
         record.msg = re.sub(
             r"(\'password\':\s*\')([^\']+)(\')", r"\1****\3", record.msg
-        )  # Handles single quotes
+        )
+        record.msg = re.sub(r"(Password: )([^,]+)(,?)", r"\1****\3", record.msg)
+
+        # Redact sensitive data in arguments
+        if record.args:
+            record.args = tuple(
+                re.sub(r"(Password: )([^,]+)(,?)", r"\1****\3", str(arg))
+                if isinstance(arg, str)
+                else arg
+                for arg in record.args
+            )
         return True
 
 
 def setup_logging():
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    logging.basicConfig(
-        level=getattr(logging, log_level),
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    uid = os.geteuid()
-    try:
-        user_info = pwd.getpwuid(uid)
-        username = user_info.pw_name
-    except KeyError:
-        username = "Unknown"
-    logging.info(f"Running as user: {username} (UID: {uid})")
+    log_level = "INFO"
 
-    # Apply the SensitiveDataFilter globally
-    sensitive_filter = SensitiveDataFilter()
+    # Programmatic logging configuration
+    logging_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s - %(levelname)s - %(message)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+            },
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+                "filters": ["sensitive_data_filter"],
+            },
+        },
+        "filters": {
+            "sensitive_data_filter": {
+                "()": SensitiveDataFilter,  # Reference your filter class here
+            },
+        },
+        "root": {
+            "level": log_level,
+            "handlers": ["console"],
+        },
+        "loggers": {
+            "uvicorn": {
+                "level": log_level,
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "uvicorn.access": {
+                "level": log_level,
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "uvicorn.error": {
+                "level": log_level,
+                "handlers": ["console"],
+                "propagate": False,
+            },
+        },
+    }
 
-    # Add the filter to the root logger
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers:
-        handler.addFilter(sensitive_filter)
+    # Apply the logging configuration
+    logging.config.dictConfig(logging_config)
+    logging.debug("Programmatic logging configuration applied.")

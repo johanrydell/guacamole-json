@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code and logging configuration
 COPY app /app/
-COPY log_config.yaml /app/
+COPY templates /app/templates/
+COPY static /app/static/
 
 # Add a non-root user
 RUN groupadd -r appuser && useradd --no-log-init -r -g appuser appuser

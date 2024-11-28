@@ -6,7 +6,6 @@ import sys
 ENV_DEFAULTS = {
     "TLS_PORT": 8000,
     "TLS_LOG_LEVEL": "info",
-    "TLS_LOG_CONFIG": "log_config.yaml",
     "CERT_COUNTRY": "US",
     "CERT_STATE": "California",
     "CERT_LOCALITY": "San Francisco",

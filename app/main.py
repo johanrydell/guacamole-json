@@ -3,8 +3,11 @@ import logging
 import os
 import warnings
 
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI
+from fastapi.requests import Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from services import (
     JSON_CONFIG_DIR,
     USE_BASIC_AUTH,
@@ -18,13 +21,17 @@ from urllib3.exceptions import InsecureRequestWarning
 # Remove TLS warning messages
 warnings.filterwarnings("ignore", category=InsecureRequestWarning)
 
-
 # Loggers can now use the global filter
 logger = logging.getLogger(__name__)
 
-
 # FastAPI app
 app = FastAPI()
+
+# Set up Jinja2 templates
+templates = Jinja2Templates(directory="templates")
+
+# Mount static files (CSS/JS/Images)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # Route for specific JSON file
@@ -76,32 +83,25 @@ def test_basic_auth(
 
 # GET request handler for '/' to list all JSON files
 @app.get("/", response_class=HTMLResponse)
-async def list_json_files():
+async def index(request: Request):
+    """
+    Renders the main page.
+    """
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request},
+    )
+
+
+# Use API whenever possible
+@app.get("/api/json-files", response_class=JSONResponse)
+async def get_json_files():
+    """
+    API endpoint to retrieve the list of JSON files.
+    """
     json_files = glob.glob(os.path.join(JSON_CONFIG_DIR, "*.json"))
-    json_files.sort()  # Sorting the files alphabetically
-
-    # Check if there are JSON files available
-    if not json_files:
-        html_content = """
-            <h1>No Configuration Files Found</h1>
-            <p>No JSON configuration files were found in the directory.</p>
-            <p>Please refer to the
-            <a href="https://guacamole.apache.org/doc/gug/json-auth.html"
-            target="_blank"> Guacamole JSON Authentication documentation </a>
-            for details on setting up JSON configuration files.</p>
-        """
-    else:
-        # Create an HTML page listing all .json files with clickable links
-        html_content = "<h1>Configuration Files</h1><ul>"
-        for json_file in json_files:
-            file_name = os.path.basename(json_file)
-            file_name_without_extension = os.path.splitext(file_name)[0]
-            # Create a link to view each JSON file
-            html_content += (
-                f'<li><a href="/{file_name}">{file_name_without_extension}</a></li>'
-            )
-        html_content += "</ul>"
-        html_content += "<h2>You can ONLY use one at a time.</h2>"
-        html_content += '<p>Access to <a href="/combined">all</a> configurations...'
-
-    return HTMLResponse(content=html_content)
+    json_files.sort()  # Sorting files alphabetically
+    # Remove .json extension for display purposes
+    return {
+        "files": [os.path.splitext(os.path.basename(file))[0] for file in json_files]
+    }
