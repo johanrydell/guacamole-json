@@ -5,71 +5,23 @@ import hmac
 import json
 import logging
 import os
-import re
-import tempfile
 import time
 import warnings
-from datetime import datetime, timedelta, timezone
 
 import requests
-import uvicorn
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives.serialization import (
-    Encoding,
-    NoEncryption,
-    PrivateFormat,
-)
-from cryptography.x509.oid import NameOID
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from urllib3.exceptions import InsecureRequestWarning
 
-
-#
-# We have to remove the password from any logs
-# The best way is to do a filter for the log class
-#
-class SensitiveDataFilter(logging.Filter):
-    def filter(self, record):
-        # Ensure the message is a string before applying the regex
-        if isinstance(record.msg, dict):
-            record.msg = json.dumps(record.msg)  # Convert dict to string for filtering
-        elif not isinstance(record.msg, str):
-            record.msg = str(record.msg)  # Convert other types to string
-
-        # Regular expression to find and replace passwords in double-quoted
-        # and single-quoted formats
-        record.msg = re.sub(
-            r'("password":\s*")([^"]+)(")', r"\1****\3", record.msg
-        )  # Handles double quotes
-        record.msg = re.sub(
-            r"(\'password\':\s*\')([^\']+)(\')", r"\1****\3", record.msg
-        )  # Handles single quotes
-        return True
-
-
 # Remove TLS warning messages
 warnings.filterwarnings("ignore", category=InsecureRequestWarning)
 
-# Configure logging - Default is "INFO"
-log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(level=getattr(logging, log_level))
-
-# Apply the SensitiveDataFilter globally
-sensitive_filter = SensitiveDataFilter()
-
-# Add the filter to the root logger
-root_logger = logging.getLogger()
-for handler in root_logger.handlers:
-    handler.addFilter(sensitive_filter)
 
 # Loggers can now use the global filter
-logger = logging.getLogger("app")
+logger = logging.getLogger(__name__)
 
 
 # Constants (now configurable through environment variables)
@@ -99,91 +51,6 @@ USE_BASIC_AUTH = os.getenv("BASIC", "false").lower() == "true"
 
 # Initialize Basic Authentication
 security = HTTPBasic()
-
-
-# No more unsecure HTTP
-def generate_self_signed_cert():
-    # Generate RSA key
-    key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048,
-    )
-
-    # Generate self-signed certificate
-    subject = issuer = x509.Name(
-        [
-            x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "California"),
-            x509.NameAttribute(NameOID.LOCALITY_NAME, "San Francisco"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Example Inc"),
-            x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
-        ]
-    )
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc))
-        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
-        .add_extension(
-            x509.SubjectAlternativeName([x509.DNSName("localhost")]),
-            critical=False,
-        )
-        .sign(key, hashes.SHA256())
-    )
-
-    # Serialize certificate and key to PEM format
-    cert_pem = cert.public_bytes(Encoding.PEM)
-    key_pem = key.private_bytes(
-        Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()
-    )
-
-    return cert_pem, key_pem
-
-
-# This is the server when no TLS certificates was presented
-# selfsigned certificates are created
-def generate_and_run_temp_tls():
-    # Generate self-signed certificate and key
-    cert_pem, key_pem = generate_self_signed_cert()
-
-    # Write cert and key to temporary files
-    with tempfile.NamedTemporaryFile(
-        delete=False
-    ) as cert_file, tempfile.NamedTemporaryFile(delete=False) as key_file:
-        cert_file.write(cert_pem)
-        key_file.write(key_pem)
-        cert_file_path = cert_file.name
-        key_file_path = key_file.name
-
-    try:
-        # Start Uvicorn with the temporary certificate and key
-        uvicorn.run(
-            "app:app",
-            host="0.0.0.0",
-            port=PORT,
-            ssl_certfile=cert_file_path,
-            ssl_keyfile=key_file_path,
-        )
-    finally:
-        # Clean up temporary files
-        os.unlink(cert_file_path)
-        os.unlink(key_file_path)
-
-
-# The normal way to run Uvicorn with provided certificates
-def run_with_provided_tls(key, cert, chain=None):
-    # Start Uvicorn with provided certificate and key
-    uvicorn.run(
-        "app:app",
-        host="0.0.0.0",
-        port=PORT,
-        ssl_keyfile=key,
-        ssl_certfile=cert,
-        ssl_ca_certs=chain,
-    )
 
 
 # Function to sign the file using HMAC/SHA-256
@@ -477,16 +344,3 @@ async def list_json_files():
         html_content += '<p>Access to <a href="/combined">all</a> configurations...'
 
     return HTMLResponse(content=html_content)
-
-
-if __name__ == "__main__":
-    key = os.getenv("TLS_KEY")
-    cert = os.getenv("TLS_CERT")
-    chain = os.getenv("TLS_CHAIN")
-
-    if key and cert:
-        # Run with provided TLS settings
-        run_with_provided_tls(key, cert, chain)
-    else:
-        # Fallback to self-signed certificate
-        generate_and_run_temp_tls()
