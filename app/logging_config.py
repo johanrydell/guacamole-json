@@ -1,32 +1,47 @@
 import json
 import logging
 import logging.config
+import os
 import re
 
 
-#
-# We have to remove the password from any logs
-# The best way is to do a filter for the log class
-#
 class SensitiveDataFilter(logging.Filter):
     def filter(self, record):
-        # Convert message to string if necessary
         if isinstance(record.msg, dict):
             record.msg = json.dumps(record.msg)
         elif not isinstance(record.msg, str):
             record.msg = str(record.msg)
 
-        # Redact sensitive data in the main message
-        record.msg = re.sub(r'("password":\s*")([^"]+)(")', r"\1****\3", record.msg)
-        record.msg = re.sub(
-            r"(\'password\':\s*\')([^\']+)(\')", r"\1****\3", record.msg
-        )
-        record.msg = re.sub(r"(Password: )([^,]+)(,?)", r"\1****\3", record.msg)
+        sensitive_keys = ["password", "passwd", "pwd"]
+        for key in sensitive_keys:
+            # Redact sensitive data in double-quoted JSON-like format
+            record.msg = re.sub(
+                rf'("{key}":\s*")([^"]+)(")',  # noqa: E231
+                r"\1****\3",
+                record.msg,
+                flags=re.IGNORECASE,
+            )
+            # Redact sensitive data in single-quoted JSON-like format
+            record.msg = re.sub(
+                rf"(\'{key}\':\s*\')([^\']+)(\')",  # noqa: E231
+                r"\1****\3",
+                record.msg,
+                flags=re.IGNORECASE,
+            )
+            # Redact sensitive data in plain-text log messages
+            record.msg = re.sub(
+                r"(Password: )([^,]+)(,?)",
+                r"\1****\3",
+                record.msg,
+            )
 
-        # Redact sensitive data in arguments
         if record.args:
             record.args = tuple(
-                re.sub(r"(Password: )([^,]+)(,?)", r"\1****\3", str(arg))
+                re.sub(
+                    r"(Password: )([^,]+)(,?)",
+                    r"\1****\3",
+                    str(arg),
+                )
                 if isinstance(arg, str)
                 else arg
                 for arg in record.args
@@ -35,15 +50,17 @@ class SensitiveDataFilter(logging.Filter):
 
 
 def setup_logging():
-    log_level = "INFO"
+    valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    if log_level not in valid_log_levels:
+        log_level = "INFO"
 
-    # Programmatic logging configuration
     logging_config = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
             "default": {
-                "format": "%(asctime)s - %(levelname)s - %(message)s",
+                "format": "%(asctime)s - %(levelname)s - [%(name)s] %(message)s",  # noqa: E501
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
         },
@@ -53,15 +70,21 @@ def setup_logging():
                 "formatter": "default",
                 "filters": ["sensitive_data_filter"],
             },
+            "file": {
+                "class": "logging.FileHandler",
+                "filename": ("app.log"),
+                "formatter": "default",
+                "filters": ["sensitive_data_filter"],
+            },
         },
         "filters": {
             "sensitive_data_filter": {
-                "()": SensitiveDataFilter,  # Reference your filter class here
+                "()": SensitiveDataFilter,
             },
         },
         "root": {
             "level": log_level,
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
         },
         "loggers": {
             "uvicorn": {
@@ -69,19 +92,8 @@ def setup_logging():
                 "handlers": ["console"],
                 "propagate": False,
             },
-            "uvicorn.access": {
-                "level": log_level,
-                "handlers": ["console"],
-                "propagate": False,
-            },
-            "uvicorn.error": {
-                "level": log_level,
-                "handlers": ["console"],
-                "propagate": False,
-            },
         },
     }
 
-    # Apply the logging configuration
     logging.config.dictConfig(logging_config)
-    logging.debug("Programmatic logging configuration applied.")
+    logging.debug("Logging setup complete.")

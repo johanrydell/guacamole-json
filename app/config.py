@@ -14,6 +14,8 @@ ENV_DEFAULTS = {
     "CERT_VALIDITY_DAYS": 365,
 }
 
+logger = logging.getLogger(__name__)
+
 
 def load_config():
     config = {var: os.getenv(var, default) for var, default in ENV_DEFAULTS.items()}
@@ -23,7 +25,7 @@ def load_config():
         if not (1 <= config["TLS_PORT"] <= 65535):
             raise ValueError
     except ValueError:
-        logging.error(
+        logger.error(
             f"Invalid port number: {config['TLS_PORT']}. Must be between 1 and 65535."
         )
         sys.exit(1)
@@ -33,7 +35,7 @@ def load_config():
         if config["CERT_VALIDITY_DAYS"] <= 0:
             raise ValueError
     except ValueError:
-        logging.error(
+        logger.error(
             f"Invalid certificate validity days: {config['CERT_VALIDITY_DAYS']}."
             " Must be positive."
         )

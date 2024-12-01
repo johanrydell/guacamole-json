@@ -24,9 +24,17 @@ setup_signal_handlers()
 def validate_file_path(
     file_path: Optional[str], file_type: str = "file"
 ) -> Optional[str]:
-    if not file_path or not os.path.exists(file_path):
-        logger.error(f"Invalid {file_type}: {file_path}")
+    if not file_path:  # Handle None or empty string
+        logger.error(f"File path is None or empty for {file_type}.")
         return None
+
+    if file_type == "file" and not os.path.isfile(file_path):
+        logger.error(f"Invalid file {file_type}: {file_path}")
+        return None
+    if file_type == "directory" and not os.path.isdir(file_path):
+        logger.error(f"Invalid directory {file_type}: {file_path}")
+        return None
+
     return file_path
 
 
@@ -81,18 +89,33 @@ def run_with_provided_tls(key, cert, chain=None):
     )
 
 
-if __name__ == "__main__":
-    # Validate file paths for TLS_KEY, TLS_CERT, and optional TLS_CHAIN
-    key = validate_file_path(os.getenv("TLS_KEY"), "TLS_KEY")
-    cert = validate_file_path(os.getenv("TLS_CERT"), "TLS_CERT")
-    chain = validate_file_path(os.getenv("TLS_CHAIN"), "TLS_CHAIN")
+def main():
+    logger.info("Starting the service")
 
-    # Run with provided TLS certificates or fallback to self-signed certificates
-    if key and cert:
-        run_with_provided_tls(key, cert, chain)
-    else:
-        logger.warning(
-            "No valid TLS_KEY or TLS_CERT provided."
-            " Falling back to a self-signed certificate."
-        )
-        generate_and_run_temp_tls()
+    try:
+        # Validate file paths for TLS_KEY, TLS_CERT, and optional TLS_CHAIN
+        logger.info("Validating TLS_KEY, TLS_CERT, and TLS_CHAIN environment variables")
+        key = validate_file_path(os.getenv("TLS_KEY"), "TLS_KEY")
+        cert = validate_file_path(os.getenv("TLS_CERT"), "TLS_CERT")
+        chain = validate_file_path(os.getenv("TLS_CHAIN"), "TLS_CHAIN")
+
+        # Run with provided TLS certificates or fallback to self-signed certificates
+        if key and cert:
+            logger.info(f"Using provided TLS_KEY: {key}, TLS_CERT: {cert}")
+            if chain:
+                logger.info(f"Using optional TLS_CHAIN: {chain}")
+            run_with_provided_tls(key, cert, chain)
+        else:
+            logger.warning(
+                "No valid TLS_KEY or TLS_CERT provided. "
+                "Falling back to self-signed certificates."
+            )
+            generate_and_run_temp_tls()
+
+    except Exception as e:
+        logger.error(f"Failed to start the service: {str(e)}", exc_info=True)
+        raise
+
+
+if __name__ == "__main__":
+    main()

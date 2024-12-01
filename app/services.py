@@ -10,15 +10,12 @@ import time
 import requests
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
-from fastapi import Depends, Request
+from fastapi import Request
 from fastapi.responses import RedirectResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 # Loggers can now use the global filter
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
-# Initialize Basic Authentication
-security = HTTPBasic()
 
 # Constants (now configurable through environment variables)
 NULL_IV = bytes.fromhex("00000000000000000000000000000000")
@@ -30,7 +27,7 @@ JSON_SECRET_KEY = os.getenv(
 if not JSON_SECRET_KEY or len(JSON_SECRET_KEY) != 32:
     logger.error("Invalid or missing JSON_SECRET_KEY")
     raise ValueError("Invalid or missing JSON_SECRET_KEY.")
-JSON_CONFIG_DIR = os.getenv("JSON_CONFIG_DIR", ".")
+JSON_DIR = os.getenv("JSON_DIR", ".")
 GUACAMOLE_URL = os.getenv(
     "GUACAMOLE_URL", "http://127.0.0.1:8080"
 )  # Where should the use be redirected too?
@@ -187,7 +184,7 @@ def update_timeout(json_data, default_timeout):
 
 # Refactored function to handle the common flow for loading,
 # signing, encrypting, and authentication
-def process_json_data(json_data: dict, request: Request, credentials: tuple):
+def process_json_data(json_data: dict, request: Request, username: str, password: str):
     try:
         # Update timeout
         json_with_timeout = update_timeout(json_data, DEFAULT_TIMEOUT)
@@ -201,7 +198,8 @@ def process_json_data(json_data: dict, request: Request, credentials: tuple):
 
         # Handle additional headers and basic_authorization
         if USE_BASIC_AUTH:
-            wa_username, wa_password = credentials
+            wa_username = username
+            wa_password = password
             wa_domain = None
         else:
             wa_username = request.headers.get("WA_USERNAME")
@@ -240,14 +238,3 @@ def process_json_data(json_data: dict, request: Request, credentials: tuple):
     except Exception as e:
         logger.error(f"Error processing JSON file: {e}")
         return {"error": str(e)}
-
-
-def authenticate_user(credentials: HTTPBasicCredentials = Depends(security)):
-    # Extract username and password
-    username = credentials.username
-    password = credentials.password
-
-    # Log both username and password
-    logging.info(f"Username: {username}, Password: {password}")
-
-    return username, password
