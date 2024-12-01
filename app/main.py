@@ -2,6 +2,7 @@ import base64
 import glob
 import logging
 import os
+from typing import Optional, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -32,21 +33,33 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 security = HTTPBasic()
 
 
-def authenticate_user(credentials: HTTPBasicCredentials = Depends(security)):
-    # Extract username and password
-    username = credentials.username
-    password = credentials.password
+def authenticate_user(
+    credentials: HTTPBasicCredentials = Depends(security),
+) -> Tuple[str, str]:
+    """
+    FastAPI dependency for BASIC authentication.
 
-    # Log both username and password
-    logging.debug(f"Username: {username}, Password: {password}")
+    Args:
+        credentials (HTTPBasicCredentials): Credentials provided by the client.
 
-    return username, password
+    Returns:
+        Tuple[str, str]: The username and password.
+    """
+    return credentials.username, credentials.password
 
 
-def check_auth(request: Request):
+def check_auth(request: Request) -> Tuple[Optional[str], Optional[str]]:
     """
     Checks if BASIC authentication is required and validates credentials.
-    Raises HTTPException(401) if authentication fails.
+
+    Args:
+        request (Request): The incoming request.
+
+    Returns:
+        Tuple[Optional[str], Optional[str]]: The username and password if authenticated.
+
+    Raises:
+        HTTPException: If authentication fails.
     """
     if USE_BASIC_AUTH:
         auth_header = request.headers.get("Authorization")
@@ -56,7 +69,6 @@ def check_auth(request: Request):
                 detail="Unauthorized",
                 headers={"WWW-Authenticate": "Basic"},
             )
-        # Extract and decode the credentials
         try:
             encoded_credentials = auth_header.split(" ")[1]
             decoded_credentials = base64.b64decode(encoded_credentials).decode("utf-8")
@@ -75,19 +87,23 @@ def check_auth(request: Request):
 async def get_file_by_name(filename: str, request: Request):
     """
     Endpoint to retrieve a specific JSON file by filename.
+
+    Args:
+        filename (str): The name of the JSON file (without extension).
+        request (Request): The incoming HTTP request.
+
+    Returns:
+        dict or RedirectResponse: Processed JSON data or a redirect.
     """
     username, password = check_auth(request)  # Enforce authentication if required
 
     json_file = os.path.join(JSON_DIR, f"{filename}.json")
     if not os.path.exists(json_file):
-        logger.error(f"File {filename}.json not in directory.")
-        return {"error": f"File {filename}.json not found."}
+        logger.error(f"File {filename}.json not found.")
+        raise HTTPException(status_code=404, detail=f"File {filename}.json not found.")
 
     logger.info(f"Processing JSON file: {json_file}")
-
-    # Load the JSON data from file
     json_data = load_json_file(json_file)
-
     return process_json_data(json_data, request, username, password)
 
 
@@ -95,12 +111,15 @@ async def get_file_by_name(filename: str, request: Request):
 async def get_all_configs(request: Request):
     """
     Endpoint to retrieve all unique configurations from JSON files.
+
+    Args:
+        request (Request): The incoming HTTP request.
+
+    Returns:
+        dict or RedirectResponse: Processed JSON data or a redirect.
     """
     username, password = check_auth(request)  # Enforce authentication if required
-
-    # Load the JSON data from all files
     json_data = all_unique_connections(JSON_DIR)
-
     return process_json_data(json_data, request, username, password)
 
 
@@ -108,13 +127,15 @@ async def get_all_configs(request: Request):
 async def test_basic_auth(request: Request):
     """
     Endpoint to test BASIC authentication.
+
+    Args:
+        request (Request): The incoming HTTP request.
+
+    Returns:
+        dict: A success message if authentication succeeds.
     """
     if USE_BASIC_AUTH:
         username, password = check_auth(request)  # Enforce authentication
-        # Log both username and password
-        logging.debug(
-            f"/basic-verification got Username: {username}, Password: {password}"
-        )
         return {"message": "Authenticated successfully!"}
     else:
         return {"message": "Basic Authentication is not enabled"}
@@ -124,6 +145,12 @@ async def test_basic_auth(request: Request):
 async def index(request: Request):
     """
     Renders the main page.
+
+    Args:
+        request (Request): The incoming HTTP request.
+
+    Returns:
+        TemplateResponse: The rendered HTML page.
     """
     return templates.TemplateResponse("index.html", {"request": request})
 
@@ -132,10 +159,12 @@ async def index(request: Request):
 async def get_json_files():
     """
     API endpoint to retrieve the list of JSON files.
+
+    Returns:
+        dict: A list of JSON filenames (without extensions).
     """
     json_files = glob.glob(os.path.join(JSON_DIR, "*.json"))
-    json_files.sort()  # Sorting files alphabetically
-    # Remove .json extension for display purposes
+    json_files.sort()  # Sort files alphabetically
     return {
         "files": [os.path.splitext(os.path.basename(file))[0] for file in json_files]
     }

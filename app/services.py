@@ -5,7 +5,9 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import time
+from typing import Dict, List, Optional, cast
 
 import requests
 from Crypto.Cipher import AES
@@ -16,225 +18,160 @@ from fastapi.responses import RedirectResponse
 # Loggers can now use the global filter
 logger = logging.getLogger(__name__)
 
-
-# Constants (now configurable through environment variables)
+# Constants
 NULL_IV = bytes.fromhex("00000000000000000000000000000000")
-DEFAULT_TIMEOUT = int(os.getenv("DEFAULT_TIMEOUT", 3600 * 8))  # Default to 8 hours
-JSON_SECRET_KEY = os.getenv(
-    "JSON_SECRET_KEY", "4C0B569E4C96DF157EEE1B65DD0E4D41"
-)  # The static key is the guacamole test key
+DEFAULT_TIMEOUT = int(os.getenv("DEFAULT_TIMEOUT", 3600 * 8))  # 8 hours
+JSON_SECRET_KEY = os.getenv("JSON_SECRET_KEY", "")
+if len(JSON_SECRET_KEY) != 32:
+    logger.error("Invalid or missing JSON_SECRET_KEY.")
+    raise ValueError("Invalid JSON_SECRET_KEY.")
 
-if not JSON_SECRET_KEY or len(JSON_SECRET_KEY) != 32:
-    logger.error("Invalid or missing JSON_SECRET_KEY")
-    raise ValueError("Invalid or missing JSON_SECRET_KEY.")
+# Explicitly cast JSON_SECRET_KEY to str for type checking
+JSON_SECRET_KEY = cast(str, JSON_SECRET_KEY)
+
 JSON_DIR = os.getenv("JSON_DIR", ".")
-GUACAMOLE_URL = os.getenv(
-    "GUACAMOLE_URL", "http://127.0.0.1:8080"
-)  # Where should the use be redirected too?
-# Static postfix values of the guacamole server
+GUACAMOLE_URL = os.getenv("GUACAMOLE_URL", "http://127.0.0.1:8080")
 GUACAMOLE_TOKEN_URL = f"{GUACAMOLE_URL}/guacamole/api/tokens"
 GUACAMOLE_REDIRECT_URL = f"{GUACAMOLE_URL}/guacamole/#/"
-
-
-# Read the BASIC parameter from the environment
-# This will require basic authorization for any URL except '/'
 USE_BASIC_AUTH = os.getenv("SSO", "true").lower() == "true"
 
 
-# Function to sign the file using HMAC/SHA-256
-def sign(JSON_SECRET_KEY, file_contents):
-    key_bytes = bytes.fromhex(JSON_SECRET_KEY)
-    hmac_signature = hmac.new(key_bytes, file_contents, hashlib.sha256).digest()
-    return hmac_signature + file_contents
+class ServiceError(Exception):
+    """Custom exception class for service-related errors."""
 
 
-# Function to encrypt data using AES-128-CBC with a null IV
-def encrypt(JSON_SECRET_KEY, data):
+def sign(secret_key: str, file_contents: bytes) -> bytes:
+    key_bytes = bytes.fromhex(secret_key)
+    return hmac.new(key_bytes, file_contents, hashlib.sha256).digest() + file_contents
+
+
+def encrypt(secret_key: str, data: bytes) -> str:
     try:
-        key_bytes = bytes.fromhex(JSON_SECRET_KEY)
+        key_bytes = bytes.fromhex(secret_key)
         if len(key_bytes) != 16:
-            raise ValueError(
-                "Secret key must be exactly 16 bytes"
-                "(32 hex characters) for AES-128 encryption."
-            )
-
+            raise ValueError("Secret key must be 16 bytes for AES-128 encryption.")
         cipher = AES.new(key_bytes, AES.MODE_CBC, NULL_IV)
         padded_data = pad(data, AES.block_size)
         encrypted_data = cipher.encrypt(padded_data)
-        base64_encoded = base64.b64encode(encrypted_data).decode("utf-8")
-
-        return base64_encoded
-    except ValueError as e:
+        return base64.b64encode(encrypted_data).decode("utf-8")
+    except Exception as e:
         logger.error(f"Encryption error: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error during encryption: {e}")
-        raise
+        raise ServiceError(f"Encryption failed: {str(e)}")
 
 
-# Helper function to read a json file and return json data
-def load_json_file(JSON_FILENAME):
+def load_json_file(file_path: str) -> Dict:
     try:
-        with open(JSON_FILENAME, "r") as f:
-            return json.load(f)
+        with open(file_path, "r") as file:
+            return json.load(file)
     except FileNotFoundError:
-        logger.error(f"File not found: {JSON_FILENAME}")
-        raise
+        raise ServiceError(f"File not found: {file_path}")
     except json.JSONDecodeError as e:
-        logger.error(f"JSON decoding error in file {JSON_FILENAME}: {e}")
-        raise
+        raise ServiceError(f"Invalid JSON format in file {file_path}: {e}")
     except Exception as e:
-        logger.error(f"Unexpected error while loading {JSON_FILENAME}: {e}")
-        raise
+        raise ServiceError(f"Unexpected error reading file {file_path}: {e}")
 
 
-# Helper function to send POST request to Guacamole
-# We want the authToken
-def authenticate_with_guacamole(encrypted_data):
+def authenticate_with_guacamole(encrypted_data: str) -> str:
     try:
-        post_data = {"data": encrypted_data}
-        # ToDo: verify internal TLS servers
-        guacamole_response = requests.post(
-            GUACAMOLE_TOKEN_URL, data=post_data, verify=False
+        response = requests.post(
+            GUACAMOLE_TOKEN_URL, data={"data": encrypted_data}, verify=False
         )
-
-        if guacamole_response.status_code != 200:
-            logger.error(
-                "Guacamole authentication failed, "
-                f"status code: {guacamole_response.status_code}"
-            )
-            raise Exception(
-                "Failed to authenticate with Guacamole, "
-                f"status code: {guacamole_response.status_code}"
-            )
-
-        guac_data = guacamole_response.json()
-        token = guac_data.get("authToken")
-
+        response.raise_for_status()
+        token = response.json().get("authToken")
         if not token:
-            logger.error("Token not found in Guacamole response")
-            raise Exception("Token not found in Guacamole response")
-
+            raise ServiceError("Token not found in Guacamole response.")
         return token
-
     except requests.RequestException as e:
-        logger.error(f"Request failed to Guacamole: {e}")
-        raise
+        raise ServiceError(f"Guacamole authentication failed: {e}")
 
 
-# Helper function to find the JSON files in the specified directory
-def find_json_files(directory):
+def find_json_files(directory: str) -> List[str]:
     json_files = glob.glob(os.path.join(directory, "*.json"))
-
     if not json_files:
-        raise Exception(f"No JSON files found in directory: {directory}")
-
-    # Sort the files
-    json_files.sort()
-
-    # Return the files found
-    return json_files
+        raise ServiceError(f"No JSON files found in directory: {directory}")
+    return sorted(json_files)
 
 
-# Function to process JSON files and merge unique 'connections' into one json structure
-def all_unique_connections(directory):
-    # Find and load the first JSON file
+def all_unique_connections(directory: str) -> Dict:
     json_files = find_json_files(directory)
+    merged_connections = {}
 
-    with open(json_files[0], "r") as first_file:
-        first_json_data = json.load(first_file)  # Read the first JSON file into memory
+    for file in json_files:
+        json_data = load_json_file(file)
+        connections = json_data.get("connections", {})
+        for conn_name, conn_data in connections.items():
+            if conn_name not in merged_connections:
+                merged_connections[conn_name] = conn_data
 
-    # Initialize a dictionary to store unique connections
-    merged_connections = first_json_data.get("connections", {})
+    # Generate a random username and current epoch expiration
+    random_username = secrets.token_hex(8)  # Generates 16-character hex string
+    current_time = int(time.time() * 1000)  # Current time in milliseconds
 
-    # Loop through the remaining JSON files
-    for json_file in json_files[1:]:
-        json_data = load_json_file(json_file)
+    # Final response with username, expires, and connections
+    response = {
+        "username": random_username,
+        "expires": str(current_time),
+        "connections": merged_connections,
+    }
 
-        # Check if 'connections' exists in the JSON data
-        if "connections" in json_data:
-            for conn_name, conn_data in json_data["connections"].items():
-                if conn_name not in merged_connections:
-                    # Add unique connection to the merged dictionary
-                    merged_connections[conn_name] = conn_data
-                else:
-                    print(f"Connection '{conn_name}' already exists, skipping...")
-
-    # Update the first JSON data with merged connections
-    first_json_data["connections"] = merged_connections
-
-    return first_json_data
+    return response
 
 
-# Helper function to update the "expires" field in the JSON object
-def update_timeout(json_data, default_timeout):
+def update_timeout(json_data: Dict, timeout: int) -> Dict:
+    current_epoch = int(time.time() * 1000)
+    json_data["expires"] = current_epoch + (timeout * 1000)
+    return json_data
+
+
+def process_json_data(
+    json_data: Dict, request: Request, username: Optional[str], password: Optional[str]
+) -> RedirectResponse:
     try:
-        current_epoch = int(time.time() * 1000)  # Get current time in milliseconds
-        new_expiration = current_epoch + (
-            default_timeout * 1000
-        )  # Add default_timeout to current time in milliseconds
-
-        # Set or update the "expires" key in the json_data dictionary
-        json_data["expires"] = new_expiration
-
-        return json_data  # Return the updated dictionary for encryption
-    except Exception as e:
-        raise Exception(f"Error processing JSON data: {str(e)}")
-
-
-# Refactored function to handle the common flow for loading,
-# signing, encrypting, and authentication
-def process_json_data(json_data: dict, request: Request, username: str, password: str):
-    try:
-        # Update timeout
         json_with_timeout = update_timeout(json_data, DEFAULT_TIMEOUT)
-        logger.debug("Timeout updated in JSON structure.")
 
-        # Handle WA_UID cookie
         wa_uid = request.cookies.get("WA_UID")
         if wa_uid:
-            logger.debug(f"Updating username with WA_UID cookie: {wa_uid}")
             json_with_timeout["username"] = wa_uid
 
-        # Handle additional headers and basic_authorization
         if USE_BASIC_AUTH:
-            wa_username = username
-            wa_password = password
-            wa_domain = None
+            wa_username, wa_password, wa_domain = username, password, None
         else:
             wa_username = request.headers.get("WA_USERNAME")
             wa_password = request.headers.get("WA_PASSWORD")
             wa_domain = request.headers.get("WA_DOMAIN")
 
-        if wa_username or wa_password or wa_domain:
-            logger.debug(f"Received credentials: {wa_username}, ****, {wa_domain}")
-            # Update 'parameters' in JSON data, but ONLY is "sso": "true" is present
-            for connection, details in json_with_timeout.get("connections", {}).items():
-                if (
-                    "parameters" in details
-                    and details["parameters"].get("sso") == "true"
-                ):
-                    if wa_username:
-                        details["parameters"]["username"] = wa_username
-                    if wa_password:
-                        details["parameters"]["password"] = wa_password
-                    if wa_domain:
-                        details["parameters"]["domain"] = wa_domain
+        json_with_timeout["username"] = wa_username
 
-        # Further processing
-        logger.debug(f"Final JSON Configuration: {json_with_timeout}")
+        for conn_name, conn_data in json_with_timeout.get("connections", {}).items():
+            if conn_data.get("parameters", {}).get("sso") == "true":
+                if wa_username:
+                    conn_data["parameters"]["username"] = wa_username
+                if wa_password:
+                    conn_data["parameters"]["password"] = wa_password
+                if wa_domain:
+                    conn_data["parameters"]["domain"] = wa_domain
+
+        wa_uid = request.cookies.get("WA_UID")
+        if wa_uid:
+            json_with_timeout["username"] = wa_uid
+
+        for handler in logging.getLogger().handlers:
+            logging.debug(f"Handler: {handler}, Filters: {handler.filters}")
+        d = json.dumps(json_with_timeout, indent=4)
+        logger.debug(f"Connections with Metadata befor sign: \n{d}")
+
         signed_data = sign(
             JSON_SECRET_KEY, json.dumps(json_with_timeout).encode("utf-8")
         )
         encrypted_data = encrypt(JSON_SECRET_KEY, signed_data)
         token = authenticate_with_guacamole(encrypted_data)
 
-        # Redirecting
-        logger.info("Redirecting to Guacamole with token.")
         return RedirectResponse(
             url=f"{GUACAMOLE_REDIRECT_URL}?token={token}", status_code=303
         )
-
+    except ServiceError as e:
+        logger.error(f"Service error: {e}")
+        return {"error": str(e)}
     except Exception as e:
-        logger.error(f"Error processing JSON file: {e}")
+        logger.error(f"Unexpected error: {e}")
         return {"error": str(e)}

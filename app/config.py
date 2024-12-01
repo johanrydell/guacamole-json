@@ -1,9 +1,9 @@
 import logging
 import os
-import sys
+from typing import Any, Dict
 
 # Default Environment Configurations
-ENV_DEFAULTS = {
+ENV_DEFAULTS: Dict[str, Any] = {
     "TLS_PORT": 8000,
     "TLS_LOG_LEVEL": "info",
     "CERT_COUNTRY": "US",
@@ -17,28 +17,50 @@ ENV_DEFAULTS = {
 logger = logging.getLogger(__name__)
 
 
-def load_config():
+class ConfigError(Exception):
+    """Custom exception for configuration errors."""
+
+
+def validate_int(value: Any, min_val: int, max_val: int, name: str) -> int:
+    """
+    Validates and converts a value to an integer within a specified range.
+    """
+    try:
+        value = int(value)
+        if not (min_val <= value <= max_val):
+            raise ValueError
+        return value
+    except ValueError:
+        raise ConfigError(
+            f"Invalid {name}: {value}. "
+            f"Must be an integer between {min_val} and {max_val}."
+        )
+
+
+def load_config() -> Dict[str, Any]:
+    """
+    Loads and validates configuration from environment variables or defaults.
+
+    Returns:
+        config (dict): A dictionary of configuration values.
+
+    Raises:
+        ConfigError: If any configuration value is invalid.
+    """
     config = {var: os.getenv(var, default) for var, default in ENV_DEFAULTS.items()}
 
     try:
-        config["TLS_PORT"] = int(config["TLS_PORT"])
-        if not (1 <= config["TLS_PORT"] <= 65535):
-            raise ValueError
-    except ValueError:
-        logger.error(
-            f"Invalid port number: {config['TLS_PORT']}. Must be between 1 and 65535."
-        )
-        sys.exit(1)
+        # Validate TLS_PORT
+        config["TLS_PORT"] = validate_int(config["TLS_PORT"], 1, 65535, "TLS_PORT")
 
-    try:
-        config["CERT_VALIDITY_DAYS"] = int(config["CERT_VALIDITY_DAYS"])
-        if config["CERT_VALIDITY_DAYS"] <= 0:
-            raise ValueError
-    except ValueError:
-        logger.error(
-            f"Invalid certificate validity days: {config['CERT_VALIDITY_DAYS']}."
-            " Must be positive."
+        # Validate CERT_VALIDITY_DAYS
+        config["CERT_VALIDITY_DAYS"] = validate_int(
+            config["CERT_VALIDITY_DAYS"], 1, 10 * 365, "CERT_VALIDITY_DAYS"
         )
-        sys.exit(1)
 
+    except ConfigError as e:
+        logger.error(str(e))
+        raise
+
+    logger.info("Configuration loaded successfully.")
     return config

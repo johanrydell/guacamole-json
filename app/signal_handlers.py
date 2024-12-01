@@ -1,15 +1,42 @@
 import logging
 import signal
 import sys
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 
-def setup_signal_handlers():
-    def cleanup_and_exit(*args):
-        logger.info("Shutting down gracefully.")
-        logger.info("Flushing logs and cleaning up resources.")
-        sys.exit(0)
+def setup_signal_handlers(custom_cleanup: Optional[Callable[[], None]] = None):
+    """
+    Sets up signal handlers for SIGINT and SIGTERM to ensure graceful shutdown.
 
+    Args:
+        custom_cleanup (Optional[Callable[[], None]]): A custom cleanup function
+        to be executed before exiting. Defaults to None.
+    """
+
+    def cleanup_and_exit(signum, frame):
+        """
+        Handles termination signals by performing cleanup and exiting gracefully.
+
+        Args:
+            signum (int): Signal number.
+            frame (FrameType): Current stack frame (unused).
+        """
+        try:
+            logger.info(f"Received signal {signum}. Initiating shutdown...")
+            if custom_cleanup:
+                logger.info("Executing custom cleanup logic.")
+                custom_cleanup()
+            logger.info("Flushing logs and cleaning up resources.")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}", exc_info=True)
+        finally:
+            logger.info("Exiting application.")
+            sys.exit(0)
+
+    # Register signal handlers
     signal.signal(signal.SIGINT, cleanup_and_exit)
     signal.signal(signal.SIGTERM, cleanup_and_exit)
+
+    logger.info("Signal handlers for SIGINT and SIGTERM are set.")

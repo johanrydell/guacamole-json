@@ -1,99 +1,43 @@
-import json
 import logging
-import logging.config
 import os
-import re
 
-
-class SensitiveDataFilter(logging.Filter):
-    def filter(self, record):
-        if isinstance(record.msg, dict):
-            record.msg = json.dumps(record.msg)
-        elif not isinstance(record.msg, str):
-            record.msg = str(record.msg)
-
-        sensitive_keys = ["password", "passwd", "pwd"]
-        for key in sensitive_keys:
-            # Redact sensitive data in double-quoted JSON-like format
-            record.msg = re.sub(
-                rf'("{key}":\s*")([^"]+)(")',  # noqa: E231
-                r"\1****\3",
-                record.msg,
-                flags=re.IGNORECASE,
-            )
-            # Redact sensitive data in single-quoted JSON-like format
-            record.msg = re.sub(
-                rf"(\'{key}\':\s*\')([^\']+)(\')",  # noqa: E231
-                r"\1****\3",
-                record.msg,
-                flags=re.IGNORECASE,
-            )
-            # Redact sensitive data in plain-text log messages
-            record.msg = re.sub(
-                r"(Password: )([^,]+)(,?)",
-                r"\1****\3",
-                record.msg,
-            )
-
-        if record.args:
-            record.args = tuple(
-                re.sub(
-                    r"(Password: )([^,]+)(,?)",
-                    r"\1****\3",
-                    str(arg),
-                )
-                if isinstance(arg, str)
-                else arg
-                for arg in record.args
-            )
-        return True
+# Set the log level based on the environment variable
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 
 def setup_logging():
-    valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    if log_level not in valid_log_levels:
-        log_level = "INFO"
+    """
+    Sets up basic logging configuration for the application.
+    Logs to stdout with timestamps and a configurable log level.
+    This function is idempotent, meaning it can be called multiple times safely.
+    """
+    try:
+        # Clear existing handlers to avoid duplicate logs
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
 
-    logging_config = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "default": {
-                "format": "%(asctime)s - %(levelname)s - [%(name)s] %(message)s",  # noqa: E501
-                "datefmt": "%Y-%m-%d %H:%M:%S",
-            },
-        },
-        "handlers": {
-            "console": {
-                "class": "logging.StreamHandler",
-                "formatter": "default",
-                "filters": ["sensitive_data_filter"],
-            },
-            "file": {
-                "class": "logging.FileHandler",
-                "filename": ("app.log"),
-                "formatter": "default",
-                "filters": ["sensitive_data_filter"],
-            },
-        },
-        "filters": {
-            "sensitive_data_filter": {
-                "()": SensitiveDataFilter,
-            },
-        },
-        "root": {
-            "level": log_level,
-            "handlers": ["console", "file"],
-        },
-        "loggers": {
-            "uvicorn": {
-                "level": log_level,
-                "handlers": ["console"],
-                "propagate": False,
-            },
-        },
-    }
+        # Validate the log level
+        numeric_level = getattr(logging, LOG_LEVEL, None)
+        if not isinstance(numeric_level, int):
+            raise ValueError(f"Invalid log level: {LOG_LEVEL}")
 
-    logging.config.dictConfig(logging_config)
-    logging.debug("Logging setup complete.")
+        # Configure the root logger
+        logging.basicConfig(
+            level=numeric_level,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            handlers=[logging.StreamHandler()],
+        )
+
+        logging.getLogger().info(f"Logging initialized with level: {LOG_LEVEL}")
+
+    except Exception as e:
+        # Fallback to default logging on error
+        logging.basicConfig(level=logging.INFO)
+        logging.getLogger().error(
+            f"Failed to set log level: {LOG_LEVEL}. Defaulting to INFO. Error: {e}"
+        )
+
+
+# Call setup_logging to initialize logging immediately
+setup_logging()
