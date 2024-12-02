@@ -35,6 +35,12 @@ GUACAMOLE_TOKEN_URL = f"{GUACAMOLE_URL}/guacamole/api/tokens"
 GUACAMOLE_REDIRECT_URL = f"{GUACAMOLE_URL}/guacamole/#/"
 USE_BASIC_AUTH = os.getenv("SSO", "true").lower() == "true"
 
+# Basic Log information
+logger.info(f"BASIC-AUTHORIZATION [SSO]: {USE_BASIC_AUTH}")
+logger.info(f"[DEFAULT_TIMEOUT]: {DEFAULT_TIMEOUT} seconds")
+logger.info(f"[GUACAMOLE_URL]: {GUACAMOLE_URL}")
+logger.info(f"[JSON_DIR]: {JSON_DIR}")
+
 
 class ServiceError(Exception):
     """Custom exception class for service-related errors."""

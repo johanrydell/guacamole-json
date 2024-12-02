@@ -94,7 +94,7 @@ def setup_logging():
         logging.root.setLevel(numeric_level)
 
         logging.getLogger(__name__).info(
-            "Logging initialized with sensitive data filter."
+            f"Logging initialized with sensitive data filter: {LOG_LEVEL}"
         )
 
     except Exception as e:
