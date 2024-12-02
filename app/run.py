@@ -128,7 +128,8 @@ def main():
     """
     # Setup logging explicitly
     setup_logging()
-
+    version = os.getenv("BUILD_INFO", "")
+    logger.info(f"[BUILD_INFO]: {version}")
     logger.info("Starting the service...")
 
     try:

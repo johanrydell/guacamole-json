@@ -23,5 +23,10 @@ RUN chown -R appuser:appuser /app
 # Switch to the non-root user
 USER appuser
 
+# Embed build information
+ARG BUILD_DATE
+ARG BUILD_VERSION
+ENV BUILD_INFO="Development version $BUILD_VERSION, not for release - $BUILD_DATE"
+
 # Run the application
 CMD ["python", "run.py"]

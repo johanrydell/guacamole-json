@@ -6,6 +6,7 @@
 # Default values
 BUILD_ONLY=false
 CONTAINERFILE=""
+VERSION="1.5.5"
 
 # Function to print usage
 print_usage() {
@@ -79,7 +80,7 @@ if [ -z "$PROJECT_NAME" ] || [ "$PROJECT_NAME" == "null" ]; then
 fi
 
 echo "Building image for $PROJECT_NAME using $CONTAINERFILE..."
-podman build -f "$CONTAINERFILE" -t "$PROJECT_NAME" .
+podman build -f "$CONTAINERFILE" --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --build-arg BUILD_VERSION="${VERSION}" -t "$PROJECT_NAME" .
 
 # If only building, exit after build
 if [ "$BUILD_ONLY" = true ]; then
