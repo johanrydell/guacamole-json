@@ -155,10 +155,8 @@ def process_json_data(
         if wa_uid:
             json_with_timeout["username"] = wa_uid
 
-        for handler in logging.getLogger().handlers:
-            logging.debug(f"Handler: {handler}, Filters: {handler.filters}")
-        d = json.dumps(json_with_timeout, indent=4)
-        logger.debug(f"Connections with Metadata befor sign: \n{d}")
+        cons = json.dumps(json_with_timeout, indent=4)
+        logger.debug(f"Connections with Metadata befor sign: \n{cons}")
 
         signed_data = sign(
             JSON_SECRET_KEY, json.dumps(json_with_timeout).encode("utf-8")
@@ -166,6 +164,16 @@ def process_json_data(
         encrypted_data = encrypt(JSON_SECRET_KEY, signed_data)
         token = authenticate_with_guacamole(encrypted_data)
 
+        # Extract username
+        username = json_with_timeout.get("username", "Unknown")
+
+        # Extract connection names
+        conn_names = list(json_with_timeout.get("connections", {}).keys())
+
+        # Log the information
+        logger.info(
+            f"Username: {username}, got connection(s) for: {', '.join(conn_names)}"
+        )
         return RedirectResponse(
             url=f"{GUACAMOLE_REDIRECT_URL}?token={token}", status_code=303
         )
