@@ -133,12 +133,10 @@ def process_json_data(
     json_data: Dict, request: Request, username: Optional[str], password: Optional[str]
 ) -> RedirectResponse:
     try:
+        # Update the timeout
         json_with_timeout = update_timeout(json_data, DEFAULT_TIMEOUT)
 
-        wa_uid = request.cookies.get("WA_UID")
-        if wa_uid:
-            json_with_timeout["username"] = wa_uid
-
+        # Do we have SSO data, otherwise try to get from HEADERS
         if USE_BASIC_AUTH:
             wa_username, wa_password, wa_domain = username, password, None
         else:
@@ -146,8 +144,8 @@ def process_json_data(
             wa_password = request.headers.get("WA_PASSWORD")
             wa_domain = request.headers.get("WA_DOMAIN")
 
-        json_with_timeout["username"] = wa_username
-
+        # Replace username, password and domain ONLY if "sso" is True
+        # and we have a new value.
         for conn_name, conn_data in json_with_timeout.get("connections", {}).items():
             if conn_data.get("parameters", {}).get("sso") == "true":
                 if wa_username:
@@ -157,9 +155,18 @@ def process_json_data(
                 if wa_domain:
                     conn_data["parameters"]["domain"] = wa_domain
 
+        # If we have a WA_UID, it should be used
+        # otherwise the wa_username
+        # finally generate a new value
         wa_uid = request.cookies.get("WA_UID")
         if wa_uid:
             json_with_timeout["username"] = wa_uid
+        elif wa_username:
+            json_with_timeout["username"] = wa_username
+        else:
+            # Generate a random username and current epoch expiration
+            random_username = secrets.token_hex(8)  # Generates 16-character hex string
+            json_with_timeout["username"] = f"ID_{random_username}"
 
         cons = json.dumps(json_with_timeout, indent=4)
         logger.debug(f"Connections with Metadata befor sign: \n{cons}")

@@ -130,7 +130,7 @@ fi
 
 # Podman environment and volume options
 mkdir -p ${JSON_DIR}
-CONTAINER_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_DIR=/json -e GUACAMOLE_URL=${GUACAMOLE_URL} ${LOG} -e BASIC=${SSO} "
+CONTAINER_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e JSON_DIR=/json -e GUACAMOLE_URL=${GUACAMOLE_URL} ${LOG} -e SSO=${SSO} "
 CONTAINER_VOL=" -v ${JSON_DIR}:/json "
 
 # Verify TLS certificates exist
