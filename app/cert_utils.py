@@ -4,7 +4,9 @@ from typing import Dict, Tuple
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.x509.oid import NameOID
 
 logger = logging.getLogger(__name__)
@@ -14,15 +16,49 @@ class CertificateError(Exception):
     """Custom exception for certificate generation errors."""
 
 
-def create_key_pair() -> rsa.RSAPrivateKey:
+def create_key_pair(config: Dict[str, str]):
     """
-    Generates an RSA private key.
+    Generates a private key based on the specified key type and parameters.
+
+    Args:
+        config (Dict[str, str]): Configuration for the key type and parameters.
 
     Returns:
-        rsa.RSAPrivateKey: The generated RSA private key.
+        Asymmetric private key object: The generated private key.
     """
-    logger.debug("Generating RSA private key...")
-    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    key_type = config.get("KEY_TYPE", "RSA").upper()
+
+    if key_type == "RSA":
+        key_size = int(config.get("KEY_SIZE", 2048))
+        if key_size not in [2048, 4096]:
+            raise CertificateError("RSA key size must be 2048 or 4096.")
+        logger.debug(f"Generating RSA private key with size {key_size}...")
+        return rsa.generate_private_key(public_exponent=65537, key_size=key_size)
+
+    elif key_type == "EC":
+        curve_name = config.get("CURVE", "SECP256R1").upper()
+        if curve_name == "SECP256R1":
+            logger.debug("Generating elliptic curve key using SECP256R1...")
+            return ec.generate_private_key(ec.SECP256R1())
+        elif curve_name == "SECP384R1":
+            logger.debug("Generating elliptic curve key using SECP384R1...")
+            return ec.generate_private_key(ec.SECP384R1())
+        elif curve_name == "SECP521R1":
+            logger.debug("Generating elliptic curve key using SECP521R1...")
+            return ec.generate_private_key(ec.SECP521R1())
+        else:
+            raise CertificateError(f"Unsupported EC curve: {curve_name}")
+
+    elif key_type == "ED25519":
+        logger.debug("Generating Ed25519 private key...")
+        return Ed25519PrivateKey.generate()
+
+    elif key_type == "ED448":
+        logger.debug("Generating Ed448 private key...")
+        return Ed448PrivateKey.generate()
+
+    else:
+        raise CertificateError(f"Unsupported key type: {key_type}")
 
 
 def create_certificate_subject(config: Dict[str, str]) -> x509.Name:
@@ -98,22 +134,11 @@ def create_self_signed_cert(
         raise CertificateError(f"Failed to generate self-signed certificate: {e}")
 
 
+# Update `generate_self_signed_cert` to use the new `create_key_pair` function
 def generate_self_signed_cert(config: Dict[str, str]) -> Tuple[bytes, bytes]:
-    """
-    Generates a self-signed certificate and its private key.
-
-    Args:
-        config (Dict[str, str]): Configuration for the certificate attributes.
-
-    Returns:
-        Tuple[bytes, bytes]: The certificate and private key in PEM format.
-
-    Raises:
-        CertificateError: If the certificate generation fails.
-    """
     try:
         logger.info("Starting self-signed certificate generation...")
-        key = create_key_pair()
+        key = create_key_pair(config)
         subject = create_certificate_subject(config)
         cert = create_self_signed_cert(key, subject, config)
 

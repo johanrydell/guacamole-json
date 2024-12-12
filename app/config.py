@@ -4,17 +4,35 @@ from typing import Any, Dict
 
 # Default Environment Configurations
 ENV_DEFAULTS: Dict[str, Any] = {
+    "BUILD_INFO": "N/A",
     "TLS_PORT": 8000,
     "TLS_LOG_LEVEL": "info",
+    "TLS_DIR": "/tls",
+    "TLS_CERT": "cert.pem",
+    "TLS_KEY": "privkey.pem",
+    "TLS_CHAIN": "chain.pem",
+    "TLS_TEMP_CERT": "self-signed_cert.pem",
+    "TLS_TEMP_KEY": "self-signed_privkey.pem",
     "CERT_COUNTRY": "US",
     "CERT_STATE": "California",
     "CERT_LOCALITY": "San Francisco",
     "CERT_ORGANIZATION": "Example Inc",
     "CERT_COMMON_NAME": "localhost",
     "CERT_VALIDITY_DAYS": 365,
+    "KEY_TYPE": "RSA",
+    "KEY_SIZE": 4096,  # Changed to integer
+}
+
+PROJECT_DEFAULTS: Dict[str, Any] = {
+    "JSON_SECRET_KEY": "",
+    "CONFIG_DIR": ".",
+    "GUACAMOLE_URL": "http://127.0.0.1:8080",
+    "SSO": "true",
+    "DEFAULT_TIMEOUT": 3600 * 8,
 }
 
 logger = logging.getLogger(__name__)
+config = None  # Global config variable
 
 
 class ConfigError(Exception):
@@ -47,7 +65,14 @@ def load_config() -> Dict[str, Any]:
     Raises:
         ConfigError: If any configuration value is invalid.
     """
+    global config
+    if config is not None:
+        return config
+
     config = {var: os.getenv(var, default) for var, default in ENV_DEFAULTS.items()}
+    config.update(
+        {var: os.getenv(var, default) for var, default in PROJECT_DEFAULTS.items()}
+    )
 
     try:
         # Validate TLS_PORT

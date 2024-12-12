@@ -4,21 +4,23 @@ import logging
 import os
 from typing import Optional, Tuple
 
+from config import load_config
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from services import (
-    JSON_DIR,
-    USE_BASIC_AUTH,
-    all_unique_connections,
-    load_json_file,
-    process_json_data,
-)
+from services import all_unique_connections, load_json_file, process_json_data
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+# Load configurations
+config = load_config()
+
+CONFIG_DIR = config["CONFIG_DIR"]
+USE_BASIC_AUTH = config["SSO"].lower() == "true"
+
 
 # FastAPI app
 app = FastAPI()
@@ -97,7 +99,7 @@ async def get_file_by_name(filename: str, request: Request):
     """
     username, password = check_auth(request)  # Enforce authentication if required
 
-    json_file = os.path.join(JSON_DIR, f"{filename}.json")
+    json_file = os.path.join(CONFIG_DIR, f"{filename}.json")
     if not os.path.exists(json_file):
         logger.error(f"File {filename}.json not found.")
         raise HTTPException(status_code=404, detail=f"File {filename}.json not found.")
@@ -119,7 +121,7 @@ async def get_all_configs(request: Request):
         dict or RedirectResponse: Processed JSON data or a redirect.
     """
     username, password = check_auth(request)  # Enforce authentication if required
-    json_data = all_unique_connections(JSON_DIR)
+    json_data = all_unique_connections(CONFIG_DIR)
     return process_json_data(json_data, request, username, password)
 
 
@@ -163,7 +165,7 @@ async def get_json_files():
     Returns:
         dict: A list of JSON filenames (without extensions).
     """
-    json_files = glob.glob(os.path.join(JSON_DIR, "*.json"))
+    json_files = glob.glob(os.path.join(CONFIG_DIR, "*.json"))
     json_files.sort()  # Sort files alphabetically
     return {
         "files": [os.path.splitext(os.path.basename(file))[0] for file in json_files]

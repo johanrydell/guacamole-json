@@ -10,6 +10,7 @@ import time
 from typing import Dict, List, Optional, cast
 
 import requests
+from config import load_config
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from fastapi import Request
@@ -18,28 +19,29 @@ from fastapi.responses import RedirectResponse
 # Loggers can now use the global filter
 logger = logging.getLogger(__name__)
 
+# Load configurations
+config = load_config()
+
 # Constants
 NULL_IV = bytes.fromhex("00000000000000000000000000000000")
-DEFAULT_TIMEOUT = int(os.getenv("DEFAULT_TIMEOUT", 3600 * 8))  # 8 hours
-JSON_SECRET_KEY = os.getenv("JSON_SECRET_KEY", "")
-if len(JSON_SECRET_KEY) != 32:
+
+# Verify the variables
+if len(config["JSON_SECRET_KEY"]) != 32:
     logger.error("Invalid or missing JSON_SECRET_KEY.")
     raise ValueError("Invalid JSON_SECRET_KEY.")
 
 # Explicitly cast JSON_SECRET_KEY to str for type checking
-JSON_SECRET_KEY = cast(str, JSON_SECRET_KEY)
+JSON_SECRET_KEY = cast(str, config["JSON_SECRET_KEY"])
 
-JSON_DIR = os.getenv("JSON_DIR", ".")
-GUACAMOLE_URL = os.getenv("GUACAMOLE_URL", "http://127.0.0.1:8080")
-GUACAMOLE_TOKEN_URL = f"{GUACAMOLE_URL}/guacamole/api/tokens"
-GUACAMOLE_REDIRECT_URL = f"{GUACAMOLE_URL}/guacamole/#/"
-USE_BASIC_AUTH = os.getenv("SSO", "true").lower() == "true"
+GUACAMOLE_TOKEN_URL = f"{config['GUACAMOLE_URL']}/guacamole/api/tokens"
+GUACAMOLE_REDIRECT_URL = f"{config['GUACAMOLE_URL']}/guacamole/#/"
+USE_BASIC_AUTH = config["SSO"].lower() == "true"
 
 # Basic Log information
 logger.info(f"BASIC-AUTHORIZATION [SSO]: {USE_BASIC_AUTH}")
-logger.info(f"[DEFAULT_TIMEOUT]: {DEFAULT_TIMEOUT} seconds")
-logger.info(f"[GUACAMOLE_URL]: {GUACAMOLE_URL}")
-logger.info(f"[JSON_DIR]: {JSON_DIR}")
+logger.info(f"[CONFIG_DIR]: {config['CONFIG_DIR']}")
+logger.info(f"[DEFAULT_TIMEOUT]: {config['DEFAULT_TIMEOUT']} seconds")
+logger.info(f"[GUACAMOLE_URL]: {config['GUACAMOLE_URL']}")
 
 
 class ServiceError(Exception):
@@ -134,7 +136,7 @@ def process_json_data(
 ) -> RedirectResponse:
     try:
         # Update the timeout
-        json_with_timeout = update_timeout(json_data, DEFAULT_TIMEOUT)
+        json_with_timeout = update_timeout(json_data, config["DEFAULT_TIMEOUT"])
 
         # Do we have SSO data, otherwise try to get from HEADERS
         if USE_BASIC_AUTH:
@@ -172,9 +174,9 @@ def process_json_data(
         logger.debug(f"Connections with Metadata befor sign: \n{cons}")
 
         signed_data = sign(
-            JSON_SECRET_KEY, json.dumps(json_with_timeout).encode("utf-8")
+            config["JSON_SECRET_KEY"], json.dumps(json_with_timeout).encode("utf-8")
         )
-        encrypted_data = encrypt(JSON_SECRET_KEY, signed_data)
+        encrypted_data = encrypt(config["JSON_SECRET_KEY"], signed_data)
         token = authenticate_with_guacamole(encrypted_data)
 
         # Extract username

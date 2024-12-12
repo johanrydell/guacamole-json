@@ -4,3 +4,5 @@ venv
 json-config
 __pycache__
 app.log
+guacamole*.tar
+

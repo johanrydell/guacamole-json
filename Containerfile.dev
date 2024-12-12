@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+# Create the directories
+RUN mkdir -p /app /tls
 # Set the working directory inside the container
 WORKDIR /app
 
@@ -18,7 +20,7 @@ COPY static /app/static/
 RUN groupadd -r appuser && useradd --no-log-init -r -g appuser appuser
 
 # Change ownership of the application files
-RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app /tls
 
 # Switch to the non-root user
 USER appuser

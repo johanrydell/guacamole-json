@@ -21,53 +21,77 @@ setup_signal_handlers()
 
 
 def validate_file_path(
-    file_path: Optional[str],
-    file_type: str = "file",
+    file_path: str,
     file_msg: str = "",
+    file_access: int = os.R_OK,
 ) -> Optional[str]:
     """
     Validates that the file or directory exists.
 
     Args:
         file_path (Optional[str]): Path to validate.
-        file_type (str): Either "file" or "directory".
         file_msg (str): message of the file.
 
     Returns:
         Optional[str]: The validated file path, or None if invalid.
     """
     if not file_path:
-        logger.error(f"File path is None or empty for {file_type} {file_msg}.")
+        logger.error(f"File path is None or empty: {file_msg}.")
         return None
 
-    path_exists = (
-        os.path.isfile(file_path) if file_type == "file" else os.path.isdir(file_path)
-    )
-    if not path_exists:
-        logger.error(f"Invalid {file_type} {file_msg}: {file_path}")
+    if not os.access(file_path, file_access):
+        logger.error(f"No read access for {file_msg}: {file_path}")
         return None
 
-    logger.debug(f"Validated {file_type} {file_msg}: {file_path}")
+    logger.debug(f"Validated {file_msg}: {file_path}")
     return file_path
 
 
-def generate_and_run_temp_tls():
+def create_and_run_self_signed_tls():
     """
     Generates self-signed certificates and runs the application using them.
+    We try to save the certificate in the "TLS_DIR" if possible.
     """
     try:
+        # Generate a new certificate and private key
         cert_pem, key_pem = generate_self_signed_cert(config)
-        with tempfile.TemporaryDirectory() as temp_dir:
-            cert_file_path = os.path.join(temp_dir, "cert.pem")
-            key_file_path = os.path.join(temp_dir, "key.pem")
 
-            with open(cert_file_path, "wb") as cert_file:
-                cert_file.write(cert_pem)
+        # Can we save the new certificate and key?
+        if os.access(config["TLS_DIR"], os.W_OK):
+            logger.debug(
+                f"Saving new key and certificate to TLS_DIR: {config['TLS_DIR']}"
+            )
+
+            # Create the files in the TLS_DIR
+            key_file_path = os.path.join(
+                config["TLS_DIR"], os.path.basename(config["TLS_TEMP_KEY"])
+            )
+            cert_file_path = os.path.join(
+                config["TLS_DIR"], os.path.basename(config["TLS_TEMP_CERT"])
+            )
+
             with open(key_file_path, "wb") as key_file:
                 key_file.write(key_pem)
-
-            logger.info("Using self-signed certificate for HTTPS.")
+            with open(cert_file_path, "wb") as cert_file:
+                cert_file.write(cert_pem)
+            logger.info("Saved new self-signed certificate.")
             start_uvicorn(cert_file_path, key_file_path)
+
+        else:
+            logger.debug(f"No write access to TLS_DIR: {config['TLS_DIR']}")
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                cert_file_path = os.path.join(temp_dir, "cert.pem")
+                key_file_path = os.path.join(temp_dir, "privkey.pem")
+
+                with open(cert_file_path, "wb") as cert_file:
+                    cert_file.write(cert_pem)
+                with open(key_file_path, "wb") as key_file:
+                    key_file.write(key_pem)
+
+                logger.info("Using new self-signed certificate for HTTPS.")
+                start_uvicorn(cert_file_path, key_file_path)
+
     except Exception as e:
         logger.error(
             f"Error generating and running with self-signed certificates: {e}",
@@ -128,25 +152,51 @@ def main():
     """
     # Setup logging explicitly
     setup_logging()
-    version = os.getenv("BUILD_INFO", "")
+    version = config["BUILD_INFO"]
     logger.info(f"[BUILD_INFO]: {version}")
     logger.info("Starting the service...")
 
     try:
-        # Validate file paths for TLS_KEY, TLS_CERT, and optional TLS_CHAIN
-        key = validate_file_path(os.getenv("TLS_KEY"), "file", "TLS_KEY")
-        cert = validate_file_path(os.getenv("TLS_CERT"), "file", "TLS_CERT")
-        chain = validate_file_path(os.getenv("TLS_CHAIN"), "file", "TLS_CHAIN")
+        # Validate file read access for TLS_KEY, TLS_CERT, and optional TLS_CHAIN
+        # If TLS_KEY, TLS_CERT or TLS_CHAIN have an absolute PATH, the TLS_DIR
+        # is obmitted.
+        key = validate_file_path(
+            os.path.join(config["TLS_DIR"], config["TLS_KEY"]), "TLS_KEY"
+        )
+        cert = validate_file_path(
+            os.path.join(config["TLS_DIR"], config["TLS_CERT"]), "TLS_CERT"
+        )
+        chain = validate_file_path(
+            os.path.join(config["TLS_DIR"], config["TLS_CHAIN"]), "optional TLS_CHAIN"
+        )
 
         if key and cert:
             logger.info("Running with provided TLS certificates.")
+            logger.debug(f"certificate: {cert}, privkey: {key}")
             run_with_provided_tls(key, cert, chain)
-        else:
-            logger.warning(
-                "No valid TLS_KEY or TLS_CERT provided."
-                " Falling back to self-signed certificates."
-            )
-            generate_and_run_temp_tls()
+            return
+
+        #
+        # Let's check for the TEMP generated certificates
+        #
+        key = validate_file_path(
+            os.path.join(config["TLS_DIR"], config["TLS_TEMP_KEY"]), "TLS_TEMP_KEY"
+        )
+        cert = validate_file_path(
+            os.path.join(config["TLS_DIR"], config["TLS_TEMP_CERT"]), "TLS_TEMP_CERT"
+        )
+
+        if key and cert:
+            logger.info("Existing selfsigned TLS certificates found.")
+            logger.debug(f"certificate: {cert}, privkey: {key}")
+            run_with_provided_tls(key, cert)
+            return
+
+        logger.warning(
+            "No valid TLS_KEY or TLS_CERT provided."
+            " Creating self-signed certificates."
+        )
+        create_and_run_self_signed_tls()
 
     except Exception as e:
         logger.error(f"Service startup failed: {e}", exc_info=True)
