@@ -55,9 +55,12 @@ def validate_int(value: Any, min_val: int, max_val: int, name: str) -> int:
         )
 
 
-def load_config() -> Dict[str, Any]:
+def load_config(force_reload=False) -> Dict[str, Any]:
     """
     Loads and validates configuration from environment variables or defaults.
+
+    Args:
+        force_reload (bool): If True, forces reloading of the configuration.
 
     Returns:
         config (dict): A dictionary of configuration values.
@@ -66,7 +69,7 @@ def load_config() -> Dict[str, Any]:
         ConfigError: If any configuration value is invalid.
     """
     global config
-    if config is not None:
+    if config is not None and not force_reload:
         return config
 
     config = {var: os.getenv(var, default) for var, default in ENV_DEFAULTS.items()}

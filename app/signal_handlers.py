@@ -1,9 +1,12 @@
 import logging
 import signal
-import sys
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
+
+
+class GracefulExit(SystemExit):
+    """Custom exception for graceful exits triggered by signals."""
 
 
 def setup_signal_handlers(custom_cleanup: Optional[Callable[[], None]] = None):
@@ -32,8 +35,8 @@ def setup_signal_handlers(custom_cleanup: Optional[Callable[[], None]] = None):
         except Exception as e:
             logger.error(f"Error during cleanup: {e}", exc_info=True)
         finally:
-            logger.info("Exiting application.")
-            sys.exit(0)
+            logger.info("Raising GracefulExit exception.")
+            raise GracefulExit()
 
     # Register signal handlers
     signal.signal(signal.SIGINT, cleanup_and_exit)

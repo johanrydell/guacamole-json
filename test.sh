@@ -1,3 +1,5 @@
-pip install pytest pytest-mock mypy
+python -m unittest discover -s tests -p "test_*.py"
 
-pytest tests/
+#pip install pytest pytest-mock mypy
+
+#pytest tests/

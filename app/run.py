@@ -6,7 +6,7 @@ from typing import Optional
 import uvicorn
 from cert_utils import generate_self_signed_cert
 from config import load_config
-from logging_config import setup_logging
+from custom_logging import setup_logging
 from main import app
 from signal_handlers import setup_signal_handlers
 

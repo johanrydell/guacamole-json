@@ -98,13 +98,13 @@ def create_certificate_subject(config: Dict[str, str]) -> x509.Name:
 
 
 def create_self_signed_cert(
-    key: rsa.RSAPrivateKey, subject: x509.Name, config: Dict[str, str]
+    key, subject: x509.Name, config: Dict[str, str]
 ) -> x509.Certificate:
     """
     Generates a self-signed X.509 certificate.
 
     Args:
-        key (rsa.RSAPrivateKey): The private key for signing the certificate.
+        key: The private key for signing the certificate (RSA, EC, Ed25519, or Ed448).
         subject (x509.Name): The subject/issuer of the certificate.
         config (Dict[str, str]): Configuration for certificate validity and attributes.
 
@@ -114,7 +114,7 @@ def create_self_signed_cert(
     logger.debug("Generating self-signed certificate...")
     validity_days = int(config.get("CERT_VALIDITY_DAYS", 365))
     try:
-        return (
+        builder = (
             x509.CertificateBuilder()
             .subject_name(subject)
             .issuer_name(subject)
@@ -128,13 +128,17 @@ def create_self_signed_cert(
                 ),
                 critical=False,
             )
-            .sign(key, hashes.SHA256())
         )
+
+        # Determine the signing algorithm
+        if isinstance(key, (Ed25519PrivateKey, Ed448PrivateKey)):
+            return builder.sign(key, None)  # No algorithm for Ed25519/Ed448
+        else:
+            return builder.sign(key, hashes.SHA256())
     except Exception as e:
         raise CertificateError(f"Failed to generate self-signed certificate: {e}")
 
 
-# Update `generate_self_signed_cert` to use the new `create_key_pair` function
 def generate_self_signed_cert(config: Dict[str, str]) -> Tuple[bytes, bytes]:
     try:
         logger.info("Starting self-signed certificate generation...")
@@ -143,11 +147,20 @@ def generate_self_signed_cert(config: Dict[str, str]) -> Tuple[bytes, bytes]:
         cert = create_self_signed_cert(key, subject, config)
 
         cert_pem = cert.public_bytes(serialization.Encoding.PEM)
-        key_pem = key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.TraditionalOpenSSL,
-            serialization.NoEncryption(),
-        )
+
+        # Use PKCS8 format for Ed25519 and Ed448 keys
+        if isinstance(key, (Ed25519PrivateKey, Ed448PrivateKey)):
+            key_pem = key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        else:
+            key_pem = key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.TraditionalOpenSSL,
+                serialization.NoEncryption(),
+            )
 
         logger.info("Self-signed certificate generation completed successfully.")
         return cert_pem, key_pem
