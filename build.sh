@@ -1,20 +1,21 @@
 #!/bin/bash
 #
-# Start file for Guacamole JSON service
+# Build file for Guacamole JSON service
 #
 
 # Default values
-BUILD_ONLY=false
+BUILD_TYPE=""
 CONTAINERFILE=""
-VERSION="1.5.5"
+VERSION="latest"
+PROJECT_CONFIG="project_config.json"
 
 # Function to print usage
 print_usage() {
-    echo "Usage: $0 [--prod | --test | --dev] [--build]"
+    echo "Usage: $0 [--prod | --test | --dev] [--version=VERSION]"
     echo "  --prod       Use Containerfile.prod"
     echo "  --test       Use Containerfile.test"
     echo "  --dev        Use Containerfile.dev"
-    echo "  --build      Build the image only"
+    echo "  --version    Tag the build with this instread of 'latest'"
 }
 
 # Parse command-line options
@@ -36,6 +37,7 @@ for arg in "$@"; do
             exit 1
         fi
         CONTAINERFILE="Containerfile.test"
+        BUILD_TYPE="test_"
         shift
         ;;
     --dev)
@@ -45,10 +47,11 @@ for arg in "$@"; do
             exit 1
         fi
         CONTAINERFILE="Containerfile.dev"
+        BUILD_TYPE="dev_"
         shift
         ;;
-    --build)
-        BUILD_ONLY=true
+    --version=*)
+        VERSION="${arg#*=}"
         shift
         ;;
     esac
@@ -68,26 +71,20 @@ if [[ ! -f "$CONTAINERFILE" ]]; then
 fi
 
 # Check if project_config.json exists and parse the project name
-if [[ ! -f project_config.json ]]; then
-    echo "project_config.json not found."
+if [[ ! -f "${PROJECT_CONFIG}" ]]; then
+    echo "${PROJECT_CONFIG} not found."
     exit 1
 fi
 
-PROJECT_NAME=$(jq -r '.name' project_config.json 2>/dev/null)
+PROJECT_NAME=$(jq -r '.name' ${PROJECT_CONFIG} 2>/dev/null)
 if [ -z "$PROJECT_NAME" ] || [ "$PROJECT_NAME" == "null" ]; then
-    echo "Failed to retrieve project name from project_config.json."
+    echo "Failed to retrieve project name from ${PROJECT_CONFIG}."
     exit 1
 fi
 
 echo "Building image for $PROJECT_NAME using $CONTAINERFILE..."
-podman build -f "$CONTAINERFILE" --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --build-arg BUILD_VERSION="${VERSION}" -t "$PROJECT_NAME" .
+podman build -f "$CONTAINERFILE" --build-arg \
+    BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --build-arg BUILD_VERSION="${BUILD_TYPE}${VERSION}" -t "$PROJECT_NAME:${BUILD_TYPE}${VERSION}" .
 
-# If only building, exit after build
-if [ "$BUILD_ONLY" = true ]; then
-    echo "Building the image has finished."
-    exit 0
-fi
-
-# Pass remaining arguments to the run script
-ARGS=$(echo "$@" | sed 's/--build//g')
-./run.sh $ARGS
+echo "Building the image has finished."
