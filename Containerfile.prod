@@ -30,6 +30,9 @@ RUN cythonize -i -3 *.py
 # Stage 2: Final runtime container
 FROM python:3.12-slim
 
+# Set a fixed environment variable
+ENV PYTHONUNBUFFERED=1
+
 # Create the directories
 RUN mkdir -p /app /tls
 
