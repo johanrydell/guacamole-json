@@ -1,45 +1,38 @@
 import logging
+import os
 import signal
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 
-class GracefulExit(SystemExit):
-    """Custom exception for graceful exits triggered by signals."""
-
-
 def setup_signal_handlers(custom_cleanup: Optional[Callable[[], None]] = None):
     """
-    Sets up signal handlers for SIGINT and SIGTERM to ensure graceful shutdown.
-
-    Args:
-        custom_cleanup (Optional[Callable[[], None]]): A custom cleanup function
-        to be executed before exiting. Defaults to None.
+    Sets up fast signal handlers for SIGINT and SIGTERM.
     """
 
-    def cleanup_and_exit(signum, frame):
+    def fast_shutdown(signum, frame):
         """
-        Handles termination signals by performing cleanup and exiting gracefully.
+        Immediately shuts down the service without unnecessary delays.
+        """
+        logger.info(f"Received signal {signal.Signals(signum).name}. Shutting down...")
 
-        Args:
-            signum (int): Signal number.
-            frame (FrameType): Current stack frame (unused).
-        """
-        try:
-            logger.info(f"Received signal {signum}. Initiating shutdown...")
-            if custom_cleanup:
-                logger.info("Executing custom cleanup logic.")
+        # Run cleanup if provided
+        if custom_cleanup:
+            try:
+                logger.info("Running cleanup...")
                 custom_cleanup()
-            logger.info("Flushing logs and cleaning up resources.")
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}", exc_info=True)
-        finally:
-            logger.info("Raising GracefulExit exception.")
-            raise GracefulExit()
+            except Exception as e:
+                logger.exception(f"Cleanup error: {e}")
 
-    # Register signal handlers
-    signal.signal(signal.SIGINT, cleanup_and_exit)
-    signal.signal(signal.SIGTERM, cleanup_and_exit)
+        # Flush logs to prevent missing messages
+        logging.shutdown()
 
-    logger.info("Signal handlers for SIGINT and SIGTERM are set.")
+        # Fastest way to exit (no Python exception handling overhead)
+        os._exit(0)  # Hard exit
+
+    # Register handlers for fast shutdown
+    signal.signal(signal.SIGINT, fast_shutdown)
+    signal.signal(signal.SIGTERM, fast_shutdown)
+
+    logger.info("Fast shutdown signal handlers set up.")

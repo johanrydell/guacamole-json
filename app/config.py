@@ -28,7 +28,8 @@ PROJECT_DEFAULTS: Dict[str, Any] = {
     "CONFIG_DIR": ".",
     "GUACAMOLE_URL": "http://127.0.0.1:8080",
     "SSO": "true",
-    "DEFAULT_TIMEOUT": 3600 * 8,
+    "GUAC_LEGACY": "true",
+    "DEFAULT_TIMEOUT": 3600 * 24,
 }
 
 logger = logging.getLogger(__name__)

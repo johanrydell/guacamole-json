@@ -8,6 +8,7 @@ from cert_utils import generate_self_signed_cert
 from config import load_config
 from custom_logging import setup_logging
 from main import app
+from services import check_guacamole_connection
 from signal_handlers import setup_signal_handlers
 
 # Setup logging
@@ -155,6 +156,10 @@ def main():
     version = config["BUILD_INFO"]
     logger.info(f"[BUILD_INFO]: {version}")
     logger.info("Starting the service...")
+    logger.info(f"Checking guacamole connection to {config['GUACAMOLE_URL']} ...")
+    if check_guacamole_connection():
+        logger.info("We validated the connection. [OK]")
+    logger.info(f"Support for legacy guac headers: {config.get('GUAC_LEGACY')}")
 
     try:
         # Validate file read access for TLS_KEY, TLS_CERT, and optional TLS_CHAIN

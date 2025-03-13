@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import secrets
+import signal
 import time
 from typing import Dict, List, Optional, cast
 
@@ -24,6 +25,15 @@ config = load_config()
 
 # Constants
 NULL_IV = bytes.fromhex("00000000000000000000000000000000")
+
+# This is used to verify the Guacamole connection
+TEST_JSON = {
+    "username": "test",
+    "expires": "1446323765000",
+    "connections": {
+        "My Connection": {"protocol": "rdp", "parameters": {"hostname": "10.10.209.63"}}
+    },
+}
 
 # Verify the variables
 if len(config["JSON_SECRET_KEY"]) != 32:
@@ -131,6 +141,40 @@ def update_timeout(json_data: Dict, timeout: int) -> Dict:
     return json_data
 
 
+def process_json_guac(json_data: Dict) -> RedirectResponse:
+    try:
+        # Update the timeout
+        json_with_timeout = update_timeout(json_data, config["DEFAULT_TIMEOUT"])
+        cons = json.dumps(json_with_timeout, indent=4)
+        logger.debug(f"Connections with Metadata befor sign: \n{cons}")
+
+        signed_data = sign(
+            config["JSON_SECRET_KEY"], json.dumps(json_with_timeout).encode("utf-8")
+        )
+        encrypted_data = encrypt(config["JSON_SECRET_KEY"], signed_data)
+        token = authenticate_with_guacamole(encrypted_data)
+
+        # Extract username
+        username = json_with_timeout.get("username", "Unknown")
+
+        # Extract connection names
+        conn_names = list(json_with_timeout.get("connections", {}).keys())
+
+        # Log the information
+        logger.info(
+            f"Username: {username}, got connection(s) for: {', '.join(conn_names)}"
+        )
+        return RedirectResponse(
+            url=f"{GUACAMOLE_REDIRECT_URL}?token={token}", status_code=303
+        )
+    except ServiceError as e:
+        logger.error(f"Service error: {e}")
+        return {"error": str(e)}
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return {"error": str(e)}
+
+
 def process_json_data(
     json_data: Dict, request: Request, username: Optional[str], password: Optional[str]
 ) -> RedirectResponse:
@@ -173,11 +217,12 @@ def process_json_data(
         cons = json.dumps(json_with_timeout, indent=4)
         logger.debug(f"Connections with Metadata befor sign: \n{cons}")
 
-        signed_data = sign(
-            config["JSON_SECRET_KEY"], json.dumps(json_with_timeout).encode("utf-8")
-        )
-        encrypted_data = encrypt(config["JSON_SECRET_KEY"], signed_data)
-        token = authenticate_with_guacamole(encrypted_data)
+        # signed_data = sign(
+        #    config["JSON_SECRET_KEY"], json.dumps(json_with_timeout).encode("utf-8")
+        # )
+        # encrypted_data = encrypt(config["JSON_SECRET_KEY"], signed_data)
+        # token = authenticate_with_guacamole(encrypted_data)
+        token = get_guacamole_token(json_with_timeout)
 
         # Extract username
         username = json_with_timeout.get("username", "Unknown")
@@ -198,3 +243,27 @@ def process_json_data(
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         return {"error": str(e)}
+
+
+def check_guacamole_connection():
+    try:
+        token = get_guacamole_token(TEST_JSON)
+        if token:
+            return True
+    except Exception:
+        logger.fatal("Connection to guacamole service failed!")
+        logger.fatal(f"Check URL: {GUACAMOLE_REDIRECT_URL}")
+        logger.fatal("Check JSON_SECRET_KEY")
+        # Ensure logs are flushed before exit
+        for handler in logger.handlers:
+            handler.flush()
+        os.kill(os.getpid(), signal.SIGINT)
+
+
+def get_guacamole_token(data: Dict):
+    data_with_time = update_timeout(data, config["DEFAULT_TIMEOUT"])
+    signed_data = sign(
+        config["JSON_SECRET_KEY"], json.dumps(data_with_time).encode("utf-8")
+    )
+    encrypted_data = encrypt(config["JSON_SECRET_KEY"], signed_data)
+    return authenticate_with_guacamole(encrypted_data)

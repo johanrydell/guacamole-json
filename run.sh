@@ -23,7 +23,7 @@ TLS_DIR="${SERVICE_DIR}/tls"
 TLS_CERT="fullchain.pem"
 TLS_KEY="privkey.pem"
 # Container settings
-GUACAMOLE_URL=http://guacamole:8080
+GUACAMOLE_URL=http://nx-guacamole:8080
 SSO="true"
 GUACAMOLE_JSON_KEY=""
 CONTAINER_PORT=8000
@@ -193,7 +193,8 @@ log "Stopping any old container ${CONTAINER_NAME}..."
 stop_systemd
 sleep 1
 log "Running container ${CONTAINER_NAME}..."
-podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p ${CONTAINER_PORT}:8000 ${CONTAINER_IMAGE} || error "Failed to start container ${CONTAINER_NAME}."
+#podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${LOG} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p ${CONTAINER_PORT}:8000 ${CONTAINER_IMAGE} || error "Failed to start container ${CONTAINER_NAME}."
+podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${LOG} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p ${CONTAINER_PORT}:8000 ${CONTAINER_IMAGE} || error "Failed to start container ${CONTAINER_NAME}."
 log "Done, container ${CONTAINER_NAME} has been started."
 
 # Activate systemd if requested

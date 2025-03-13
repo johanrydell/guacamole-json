@@ -10,7 +10,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from services import all_unique_connections, load_json_file, process_json_data
+from guac_headers import parse_guacamole_url
+from services import (
+    all_unique_connections,
+    load_json_file,
+    process_json_data,
+    process_json_guac,
+)
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -19,7 +25,7 @@ logger = logging.getLogger(__name__)
 config = load_config()
 
 CONFIG_DIR = config["CONFIG_DIR"]
-USE_BASIC_AUTH = config["SSO"].lower() == "true"
+USE_BASIC_AUTH = config["SSO"].lower() == "false"
 
 
 # FastAPI app
@@ -138,7 +144,7 @@ async def test_basic_auth(request: Request):
     """
     if USE_BASIC_AUTH:
         username, password = check_auth(request)  # Enforce authentication
-        return {"message": "Authenticated successfully!"}
+        return {"message": f"{username}, authenticated successfully!"}
     else:
         return {"message": "Basic Authentication is not enabled"}
 
@@ -154,6 +160,14 @@ async def index(request: Request):
     Returns:
         TemplateResponse: The rendered HTML page.
     """
+    # Check for guacamole headers
+    if config.get("GUAC_LEGACY", "").lower() == "true":
+        guac = request.headers.get("guac", None)
+        if guac:
+            guac_json = parse_guacamole_url(guac)
+            logging.debug(f"guac_header: {guac_json}")
+            return process_json_guac(guac_json)
+
     return templates.TemplateResponse("index.html", {"request": request})
 
 
@@ -170,3 +184,13 @@ async def get_json_files():
     return {
         "files": [os.path.splitext(os.path.basename(file))[0] for file in json_files]
     }
+
+
+# Catch-all handler for any unconfigured routes
+@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def catch_all(request: Request, full_path: str):
+    """
+    This acts as the default handler if no other route is configured.
+    """
+    logging.info(f"Request to unknown path: {request.url}")
+    return await index(request)  # Call the default handler

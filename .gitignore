@@ -5,4 +5,4 @@ json-config
 __pycache__
 app.log
 guacamole*.tar
-
+*.tar.gz
