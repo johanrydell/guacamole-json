@@ -27,6 +27,7 @@ PROJECT_DEFAULTS: Dict[str, Any] = {
     "JSON_SECRET_KEY": "",
     "CONFIG_DIR": ".",
     "GUACAMOLE_URL": "http://127.0.0.1:8080",
+    "GUACAMOLE_REDIRECT_URL": "",
     "SSO": "true",
     "GUAC_LEGACY": "true",
     "DEFAULT_TIMEOUT": 3600 * 24,

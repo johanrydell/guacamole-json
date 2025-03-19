@@ -44,7 +44,11 @@ if len(config["JSON_SECRET_KEY"]) != 32:
 JSON_SECRET_KEY = cast(str, config["JSON_SECRET_KEY"])
 
 GUACAMOLE_TOKEN_URL = f"{config['GUACAMOLE_URL']}/guacamole/api/tokens"
-GUACAMOLE_REDIRECT_URL = f"{config['GUACAMOLE_URL']}/guacamole/#/"
+if len(config.get("GUACAMOLE_REDIRECT_URL", "")) > 0:
+    GUACAMOLE_REDIRECT_URL = config["GUACAMOLE_REDIRECT_URL"]
+else:
+    GUACAMOLE_REDIRECT_URL = f"{config['GUACAMOLE_URL']}/guacamole/#/"
+
 USE_BASIC_AUTH = config["SSO"].lower() == "true"
 
 # Basic Log information
@@ -52,6 +56,8 @@ logger.info(f"BASIC-AUTHORIZATION [SSO]: {USE_BASIC_AUTH}")
 logger.info(f"[CONFIG_DIR]: {config['CONFIG_DIR']}")
 logger.info(f"[DEFAULT_TIMEOUT]: {config['DEFAULT_TIMEOUT']} seconds")
 logger.info(f"[GUACAMOLE_URL]: {config['GUACAMOLE_URL']}")
+logger.debug(f"[GUACAMOLE_TOKEN_URL]: {GUACAMOLE_TOKEN_URL}")
+logger.debug(f"[GUACAMOLE_REDIRECT_URL]: {GUACAMOLE_REDIRECT_URL}")
 
 
 class ServiceError(Exception):
@@ -106,7 +112,8 @@ def authenticate_with_guacamole(encrypted_data: str) -> str:
 def find_json_files(directory: str) -> List[str]:
     json_files = glob.glob(os.path.join(directory, "*.json"))
     if not json_files:
-        raise ServiceError(f"No JSON files found in directory: {directory}")
+        logging.error(f"No JSON files found in directory: {directory}")
+        return []
     return sorted(json_files)
 
 
@@ -252,7 +259,7 @@ def check_guacamole_connection():
             return True
     except Exception:
         logger.fatal("Connection to guacamole service failed!")
-        logger.fatal(f"Check URL: {GUACAMOLE_REDIRECT_URL}")
+        logger.fatal(f"Check URL: {GUACAMOLE_TOKEN_URL}")
         logger.fatal("Check JSON_SECRET_KEY")
         # Ensure logs are flushed before exit
         for handler in logger.handlers:
