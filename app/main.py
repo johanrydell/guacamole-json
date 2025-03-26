@@ -163,8 +163,9 @@ async def index(request: Request):
     # Check for guacamole headers
     if config.get("GUAC_LEGACY", "").lower() == "true":
         guac = request.headers.get("guac", None)
+        wa_uid = request.cookies.get("WA_UID", None)
         if guac:
-            guac_json = parse_guacamole_url(guac)
+            guac_json = parse_guacamole_url(guac, wa_uid)
             logging.debug(f"guac_header: {guac_json}")
             return process_json_guac(guac_json)
 

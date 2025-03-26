@@ -23,7 +23,7 @@ TLS_DIR="${SERVICE_DIR}/tls"
 TLS_CERT="fullchain.pem"
 TLS_KEY="privkey.pem"
 # Container settings
-GUACAMOLE_URL=http://nx-guacamole:8080
+GUACAMOLE_URL=http://nx-work.rydell.se:8080
 SSO="true"
 GUACAMOLE_JSON_KEY=""
 CONTAINER_PORT=8000
