@@ -39,13 +39,10 @@ class URLParser:
 
         parsed: Dict[str, Any] = {"protocol": protocol}
 
+        # Safely isolate query section using the clearer '/?' split
         query = ""
-        if not url.endswith("/"):
-            match = re.search(r"/\?", rest)
-            if match:
-                query_start = match.start()
-                query = rest[query_start + 2 :]
-                rest = rest[:query_start] + "/"
+        if "/?" in rest:
+            rest, query = rest.split("/?", 1)
 
         port = None
         host_port_path = rest.split("/", 1)[0]
@@ -78,6 +75,31 @@ class URLParser:
 def fallback_username():
     now = int(time.time() * 1000)
     return f"da_{now:x}"
+
+
+def resolve_path(pre_path: str, sub_path: str) -> str:
+    sub_path = sub_path.lstrip("/\\")  # Handle both Unix and Windows
+    path = os.path.join(pre_path, sub_path)
+    return path
+
+
+def resolve_vars_in_structure(data, variables: dict):
+    if isinstance(data, dict):
+        return {k: resolve_vars_in_structure(v, variables) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [resolve_vars_in_structure(item, variables) for item in data]
+    elif isinstance(data, str):
+        return resolve_vars(data, variables)
+    else:
+        return data  # leave other types (int, bool, etc.) unchanged
+
+
+def resolve_vars(string: str, variables: dict) -> str:
+    def replacer(match):
+        key = match.group(1)
+        return variables.get(key, match.group(0))  # fallback to ${KEY}
+
+    return re.sub(r"\$\{(\w+)\}", replacer, string)
 
 
 def parse_guacamole_url(url, wa_uid=None):
@@ -117,19 +139,17 @@ def parse_guacamole_url(url, wa_uid=None):
     # Add any additional query parameters
     guac_config["parameters"].update(url_dict.get("arguments", {}))
 
-    # print(guac_config)
-    # print(config.get("PRE_DRIVE_PATH", ""))
-    # print(guac_config["parameters"].get("drive-path", ""))
-
-    drive_path = os.path.join(
+    drive_path = resolve_path(
         config.get("PRE_DRIVE_PATH", ""),
         guac_config["parameters"].get("drive-path", ""),
     )
-    recording_path = os.path.join(
+
+    recording_path = resolve_path(
         config.get("PRE_RECORDING_PATH", ""),
         guac_config["parameters"].get("recording-path", ""),
     )
-    typescript_path = os.path.join(
+
+    typescript_path = resolve_path(
         config.get("PRE_TYPESCRIPT_PATH", ""),
         guac_config["parameters"].get("typescript-path", ""),
     )
@@ -141,31 +161,47 @@ def parse_guacamole_url(url, wa_uid=None):
     if typescript_path:
         guac_config["parameters"]["typescript-path"] = typescript_path
 
-    f = {
+    json = {
         "username": guac_config["parameters"].get("username", fallback_username()),
         "expires": "0",
         "connections": {"DA - Connection": guac_config},
     }
     if wa_uid:
-        f["username"] = wa_uid
+        json["username"] = wa_uid
 
-    return f
+    my_vars = {}
+    if wa_uid:
+        my_vars["WA_UID"] = wa_uid
+    if username:
+        my_vars["USERNAME"] = username
+
+    print(my_vars)
+
+    print(json)
+
+    json = resolve_vars_in_structure(json, my_vars)
+
+    return json
 
 
 if __name__ == "__main__":
     """
     Test code...
     """
+    wa_uid = "wa_jr"
     # Example list of URLs
     urls = [
-        "rdp://a@localuser@windows1.example.com/",
+        "rdp://a@localuser@windows1.example.com/"
+        "?abc=${USERNAME}&wa=${WA_UID}&recording-path=/&ab=cd",
+        "rdp://a@localuser@windows1.example.com/"
+        "?abc=${USERNAME}&wa=${WA_UID}&recording-path=/",
         # Clean RDP URL
         "rdp://a@localuser@windows1.example.com/"
         "?security=rdp&ignore-cert=true&disable-audio=true"
-        "&enable-drive=true&drive-path=/mnt/usb",
+        "&enable-drive=true&drive-path=/mnt/${WA_UID}/usb",
         "rdp://a@localuser@windows1.example.com/"
         "?security=rdp&ignore-cert=true&disable-audio=true"
-        "&enable-drive=true&drive-path=mnt/usb",
+        "&enable-drive=true&drive-path=mnt/usb/${USERNAME}/abc",
         # Encoded RDP URL
         "rdp%3A%2F%2FAdministrator%3AAbcd1234%40172.16.3.87%2F"
         "?abc%3D%21%40%23%24%25%26def%3D0!@#$%^&*()?<>9",
@@ -191,7 +227,7 @@ if __name__ == "__main__":
         print(f"URL: {url}")
         print(
             json.dumps(
-                parse_guacamole_url(url),
+                parse_guacamole_url(url, wa_uid),
                 indent=4,
             )
         )
