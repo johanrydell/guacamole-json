@@ -107,7 +107,7 @@ def parse_guacamole_url(url, wa_uid=None):
     parser = URLParser()
     url_dict = parser.parse(url)
 
-    print(url_dict)
+    # print(url_dict)
     # variables
     protocol = url_dict.get("protocol")
     hostname = url_dict.get("hostname")
@@ -175,9 +175,9 @@ def parse_guacamole_url(url, wa_uid=None):
     if username:
         my_vars["USERNAME"] = username
 
-    print(my_vars)
+    # print(my_vars)
 
-    print(json)
+    # print(json)
 
     json = resolve_vars_in_structure(json, my_vars)
 
