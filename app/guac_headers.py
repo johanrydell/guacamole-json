@@ -164,7 +164,7 @@ def parse_guacamole_url(url, wa_uid=None):
     json = {
         "username": guac_config["parameters"].get("username", fallback_username()),
         "expires": "0",
-        "connections": {"DA - Connection": guac_config},
+        "connections": {f"DA - {fallback_username()}": guac_config},
     }
     if wa_uid:
         json["username"] = wa_uid

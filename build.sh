@@ -31,12 +31,12 @@ while [[ $# -gt 0 ]]; do
     --test)
         [[ -n "$CONTAINERFILE" ]] && { echo "Error: Only one of --prod, --test, or --dev can be specified."; print_usage; }
         CONTAINERFILE="Containerfile.test"
-        BUILD_TYPE="test_"
+        BUILD_TYPE=""
         ;;
     --dev)
         [[ -n "$CONTAINERFILE" ]] && { echo "Error: Only one of --prod, --test, or --dev can be specified."; print_usage; }
         CONTAINERFILE="Containerfile.dev"
-        BUILD_TYPE="dev_"
+        BUILD_TYPE=""
         ;;
     --version=*)
         VERSION="${1#*=}"

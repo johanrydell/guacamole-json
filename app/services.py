@@ -8,14 +8,14 @@ import os
 import secrets
 import signal
 import time
-from typing import Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 
 import requests
 from config import load_config
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from fastapi import Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
 
 # Loggers can now use the global filter
 logger = logging.getLogger(__name__)
@@ -148,32 +148,13 @@ def update_timeout(json_data: Dict, timeout: int) -> Dict:
     return json_data
 
 
-def process_json_guac(json_data: Dict) -> RedirectResponse:
+def process_json_guac(json_data: Dict) -> HTMLResponse:
     try:
-        # Update the timeout
-        json_with_timeout = update_timeout(json_data, config["DEFAULT_TIMEOUT"])
-        cons = json.dumps(json_with_timeout, indent=4)
-        logger.debug(f"Connections with Metadata befor sign: \n{cons}")
+        json_with_timeout = prepare_json_with_timeout(json_data)
+        token = generate_token(json_with_timeout)
+        redirect_url = get_redirect_url(json_with_timeout, token)
+        return build_redirect_response(redirect_url)
 
-        signed_data = sign(
-            config["JSON_SECRET_KEY"], json.dumps(json_with_timeout).encode("utf-8")
-        )
-        encrypted_data = encrypt(config["JSON_SECRET_KEY"], signed_data)
-        token = authenticate_with_guacamole(encrypted_data)
-
-        # Extract username
-        username = json_with_timeout.get("username", "Unknown")
-
-        # Extract connection names
-        conn_names = list(json_with_timeout.get("connections", {}).keys())
-
-        # Log the information
-        logger.info(
-            f"Username: {username}, got connection(s) for: {', '.join(conn_names)}"
-        )
-        return RedirectResponse(
-            url=f"{GUACAMOLE_REDIRECT_URL}?token={token}", status_code=303
-        )
     except ServiceError as e:
         logger.error(f"Service error: {e}")
         return {"error": str(e)}
@@ -182,68 +163,115 @@ def process_json_guac(json_data: Dict) -> RedirectResponse:
         return {"error": str(e)}
 
 
+def prepare_json_with_timeout(json_data: Dict) -> Dict:
+    json_new = update_timeout(json_data, config["DEFAULT_TIMEOUT"])
+    logger.debug(
+        f"Connections with Metadata before sign: \n{json.dumps(json_new, indent=4)}"
+    )
+    return json_new
+
+
+def generate_token(json_data: Dict) -> str:
+    signed = sign(config["JSON_SECRET_KEY"], json.dumps(json_data).encode("utf-8"))
+    encrypted = encrypt(config["JSON_SECRET_KEY"], signed)
+    return authenticate_with_guacamole(encrypted)
+
+
+def get_redirect_url(json_data: Dict, token: str) -> str:
+    username = json_data.get("username", "Unknown")
+    connections = json_data.get("connections", {})
+    conn_names = list(connections.keys())
+
+    logger.info(f"Username: {username}, got connection(s) for: {', '.join(conn_names)}")
+
+    first_conn: Dict[str, Any] = next(iter(connections.values()), {})
+    if isinstance(first_conn, dict):
+        parameters = first_conn.get("parameters", {})
+        if isinstance(parameters, dict):
+            redirect_url = parameters.get("redirect-url")
+            if redirect_url:
+                logger.info(f"Custom redirect server: {redirect_url}")
+                return f"{redirect_url}/guacamole/#/?token={token}"
+
+    return f"{GUACAMOLE_REDIRECT_URL}?token={token}"
+
+
+def build_redirect_response(redirect_url: str) -> HTMLResponse:
+    html_content = (
+        "<html>\n"
+        "<head>\n"
+        "<script>\n"
+        "localStorage.clear();\n"
+        f'window.location.href = "{redirect_url}"\n'
+        "</script>\n"
+        "</head>\n"
+        "<body>\n"
+        "<p>Redirecting to Guacamole...</p>\n"
+        "</body>\n"
+        "</html>"
+    )
+    return HTMLResponse(content=html_content)
+
+
+def get_auth_credentials(
+    request: Request, username: Optional[str], password: Optional[str]
+):
+    if USE_BASIC_AUTH:
+        return username, password, None
+    return (
+        request.headers.get("WA_USERNAME"),
+        request.headers.get("WA_PASSWORD"),
+        request.headers.get("WA_DOMAIN"),
+    )
+
+
+def inject_credentials_if_sso(
+    json_data: Dict, wa_username: str, wa_password: str, wa_domain: str
+):
+    for conn_data in json_data.get("connections", {}).values():
+        if conn_data.get("parameters", {}).get("sso") == "true":
+            params = conn_data.setdefault("parameters", {})
+            if wa_username:
+                params["username"] = wa_username
+            if wa_password:
+                params["password"] = wa_password
+            if wa_domain:
+                params["domain"] = wa_domain
+
+
+def set_effective_username(
+    json_data: Dict, request: Request, wa_username: Optional[str]
+):
+    wa_uid = request.cookies.get("WA_UID")
+    if wa_uid:
+        json_data["username"] = wa_uid
+    elif wa_username:
+        json_data["username"] = wa_username
+    else:
+        random_username = secrets.token_hex(8)
+        json_data["username"] = f"ID_{random_username}"
+
+
 def process_json_data(
     json_data: Dict, request: Request, username: Optional[str], password: Optional[str]
-) -> RedirectResponse:
+) -> HTMLResponse:
     try:
-        # Update the timeout
-        json_with_timeout = update_timeout(json_data, config["DEFAULT_TIMEOUT"])
+        my_json = update_timeout(json_data, config["DEFAULT_TIMEOUT"])
 
-        # Do we have SSO data, otherwise try to get from HEADERS
-        if USE_BASIC_AUTH:
-            wa_username, wa_password, wa_domain = username, password, None
-        else:
-            wa_username = request.headers.get("WA_USERNAME")
-            wa_password = request.headers.get("WA_PASSWORD")
-            wa_domain = request.headers.get("WA_DOMAIN")
-
-        # Replace username, password and domain ONLY if "sso" is True
-        # and we have a new value.
-        for conn_name, conn_data in json_with_timeout.get("connections", {}).items():
-            if conn_data.get("parameters", {}).get("sso") == "true":
-                if wa_username:
-                    conn_data["parameters"]["username"] = wa_username
-                if wa_password:
-                    conn_data["parameters"]["password"] = wa_password
-                if wa_domain:
-                    conn_data["parameters"]["domain"] = wa_domain
-
-        # If we have a WA_UID, it should be used
-        # otherwise the wa_username
-        # finally generate a new value
-        wa_uid = request.cookies.get("WA_UID")
-        if wa_uid:
-            json_with_timeout["username"] = wa_uid
-        elif wa_username:
-            json_with_timeout["username"] = wa_username
-        else:
-            # Generate a random username and current epoch expiration
-            random_username = secrets.token_hex(8)  # Generates 16-character hex string
-            json_with_timeout["username"] = f"ID_{random_username}"
-
-        cons = json.dumps(json_with_timeout, indent=4)
-        logger.debug(f"Connections with Metadata befor sign: \n{cons}")
-
-        # signed_data = sign(
-        #    config["JSON_SECRET_KEY"], json.dumps(json_with_timeout).encode("utf-8")
-        # )
-        # encrypted_data = encrypt(config["JSON_SECRET_KEY"], signed_data)
-        # token = authenticate_with_guacamole(encrypted_data)
-        token = get_guacamole_token(json_with_timeout)
-
-        # Extract username
-        username = json_with_timeout.get("username", "Unknown")
-
-        # Extract connection names
-        conn_names = list(json_with_timeout.get("connections", {}).keys())
-
-        # Log the information
-        logger.info(
-            f"Username: {username}, got connection(s) for: {', '.join(conn_names)}"
+        wa_username, wa_password, wa_domain = get_auth_credentials(
+            request, username, password
         )
-        return RedirectResponse(
-            url=f"{GUACAMOLE_REDIRECT_URL}?token={token}", status_code=303
+        inject_credentials_if_sso(my_json, wa_username, wa_password, wa_domain)
+        set_effective_username(my_json, request, wa_username)
+
+        logger.debug(
+            f"Connections with Metadata before sign: \n{json.dumps(my_json, indent=4)}"
         )
+
+        token = get_guacamole_token(my_json)
+        redirect_url = get_redirect_url(my_json, token)
+        return build_redirect_response(redirect_url)
+
     except ServiceError as e:
         logger.error(f"Service error: {e}")
         return {"error": str(e)}
