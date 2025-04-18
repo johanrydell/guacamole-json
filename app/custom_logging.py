@@ -8,16 +8,20 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 class SensitiveDataFilter(logging.Filter):
     """
-    A logging filter that redacts sensitive data (e.g., passwords)
+    A logging filter that redacts sensitive data (e.g., passwords, RSA keys)
     from log messages and arguments.
     """
 
     def __init__(self):
         super().__init__()
-        # Regex to match sensitive patterns: 'password', "password",
-        # with optional ':' or '='
         self.sensitive_pattern = re.compile(
             r'(?i)(["\']?password["\']?\s*[:=]\s*[\'"]?)([^\'",\s]+)'
+        )
+
+        # Pattern to match an RSA key block
+        self.rsa_key_pattern = re.compile(
+            r"(-----BEGIN RSA PRIVATE KEY-----)(.*?)(-----END RSA PRIVATE KEY-----)",
+            re.DOTALL,
         )
 
     def redact(self, message):
@@ -25,16 +29,12 @@ class SensitiveDataFilter(logging.Filter):
         Redacts sensitive data from strings, dictionaries, or lists.
         """
         if isinstance(message, str):
-            # Apply regex redaction for plain strings
-            return self.sensitive_pattern.sub(r"\1****", message)
-        elif isinstance(message, dict):
-            # Redact sensitive keys in dictionaries
-            for key in message.keys():
-                if key.lower() == "password":
-                    message[key] = "****"
+            message = self.sensitive_pattern.sub(r"\1****", message)
+            message = self.rsa_key_pattern.sub(r"\1\n****\n\3", message)
             return message
+        elif isinstance(message, dict):
+            return {k: self.redact(v) for k, v in message.items()}
         elif isinstance(message, list):
-            # Redact sensitive entries in lists
             return [self.redact(item) for item in message]
         return message
 
@@ -44,16 +44,14 @@ class SensitiveDataFilter(logging.Filter):
         """
         if record.args:
             try:
-                # Redact arguments and combine with the message
                 redacted_args = tuple(self.redact(arg) for arg in record.args)
                 record.msg = record.msg % redacted_args
-                record.args = None  # Clear args to prevent further processing
+                record.args = None
             except Exception as e:
                 logging.getLogger(__name__).error(
                     f"Error formatting log message: {e}", exc_info=True
                 )
         else:
-            # Redact standalone messages
             record.msg = self.redact(record.msg)
 
     def filter(self, record):

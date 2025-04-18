@@ -165,6 +165,7 @@ async def index(request: Request):
         guac = request.headers.get("guac", None)
         wa_uid = request.cookies.get("WA_UID", None)
         if guac:
+            logging.debug(f"guac_header_raw: {guac}")
             guac_json = parse_guacamole_url(guac, wa_uid)
             logging.debug(f"guac_header: {guac_json}")
             return process_json_guac(guac_json)

@@ -161,10 +161,14 @@ def parse_guacamole_url(url, wa_uid=None):
     if typescript_path:
         guac_config["parameters"]["typescript-path"] = typescript_path
 
+    guac_fixed_config = fix_newlines(guac_config)
+
     json = {
-        "username": guac_config["parameters"].get("username", fallback_username()),
+        "username": guac_fixed_config["parameters"].get(
+            "username", fallback_username()
+        ),
         "expires": "0",
-        "connections": {f"DA - {fallback_username()}": guac_config},
+        "connections": {f"DA - {fallback_username()}": guac_fixed_config},
     }
     if wa_uid:
         json["username"] = wa_uid
@@ -182,6 +186,17 @@ def parse_guacamole_url(url, wa_uid=None):
     json = resolve_vars_in_structure(json, my_vars)
 
     return json
+
+
+def fix_newlines(obj):
+    if isinstance(obj, dict):
+        return {k: fix_newlines(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [fix_newlines(i) for i in obj]
+    elif isinstance(obj, str):
+        return obj.replace("\\n", "\n")
+    else:
+        return obj
 
 
 if __name__ == "__main__":
@@ -221,6 +236,21 @@ if __name__ == "__main__":
         "?abc%3D%21%40%23%24%25%26def%3D0!@#$%^&*()?<>9"
         "&def%3D0!@#$%^&*()?<>9"
         "&def%3D0!@#$%^&*()?<>9",
+        "ssh://nx3@guacamole/?private-key=-----BEGIN RSA PRIVATE KEY-----\n"
+        "MIICXAIBAAKBgQDIT7wmYsnthyqZ9Ua9S9aRz5h06YFVjjmMo8v6fiHaXOxOG12I\n"
+        "NB3d5lcNG8XGDkqsJm1SIZ080LzAmI5EN/5tFFxR3ZaJWFVMnNauG3y4rhzmbeAS\n"
+        "1Mj9QK0U54u73P17/4un/JaLX3mCZNhhrnSgJIks5tTM/oBM5Bzf41leAwIDAQAB\n"
+        "AoGAYyOzh3wVXM4tM43FuSKzy+7nEdYQAPwnV4gqCIwszRp4ih/ZJvREY/MA2qgI\n"
+        "NoIUSyepq6CfZd4ZzWiz4OelsA7LMyZ7+wQtrY/qmvIRnOH+8VvuYkxc2QZGbHUL\n"
+        "HlioZeC85NO6sV2DFRZ9znR8iDcVzmZmtGeZtCUHTFs0JMECQQDomLNIK8imQ8Ea\n"
+        "6/hKIztU/m/Gg+kO1BMkzWWIXAZEaiMwDWyk4MJOirLwoHt+7cnySQpWq0ixibUC\n"
+        "kBVW7Gu7AkEA3HdtEZ6kSA0ssMv4XJmNnBR+FOC9Ls6T5gUa91MqyPtpqOymnLGs\n"
+        "Na04IJEjwqZ206a5r7krSXlTeqsORxgeWQJBAMSJqwvzuzMKk1Q9SerTRGI4MJis\n"
+        "g7S87IQvbni/UahjiuIipcfYBze4qST8Zf3FzduFbk/3oZAqzSGiP/XYBdsCQGoq\n"
+        "HFyav1Nu/LFaV4wH6Zhaieh13MQYeEIQ/U5SP00vPE87PnRAXsQuWNPd8JGAZcJA\n"
+        "DDThf0XPZfKxQpvbsmkCQEE8qcnSE+XyQIG+hE2wr/dU15qcf6VynEPB1ZUB3SPs\n"
+        "qwFY2FO5XdUhmfFG0k9Qr3UgFPquzRpJDqd3cRF3Bdo=\n"
+        "-----END RSA PRIVATE KEY-----\n",
     ]
 
     for url in urls:

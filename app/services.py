@@ -217,11 +217,11 @@ def get_auth_credentials(
     request: Request, username: Optional[str], password: Optional[str]
 ):
     if USE_BASIC_AUTH:
-        return username, password, None
+        return username, password, ""
     return (
-        request.headers.get("WA_USERNAME"),
-        request.headers.get("WA_PASSWORD"),
-        request.headers.get("WA_DOMAIN"),
+        request.headers.get("WA_USERNAME", ""),
+        request.headers.get("WA_PASSWORD", ""),
+        request.headers.get("WA_DOMAIN", ""),
     )
 
 
@@ -231,11 +231,11 @@ def inject_credentials_if_sso(
     for conn_data in json_data.get("connections", {}).values():
         if conn_data.get("parameters", {}).get("sso") == "true":
             params = conn_data.setdefault("parameters", {})
-            if wa_username:
+            if len(wa_username) > 0:
                 params["username"] = wa_username
-            if wa_password:
+            if len(wa_password) > 0:
                 params["password"] = wa_password
-            if wa_domain:
+            if len(wa_domain) > 0:
                 params["domain"] = wa_domain
 
 
