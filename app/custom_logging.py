@@ -15,12 +15,12 @@ class SensitiveDataFilter(logging.Filter):
     def __init__(self):
         super().__init__()
         self.sensitive_pattern = re.compile(
-            r'(?i)(["\']?password["\']?\s*[:=]\s*[\'"]?)([^\'",\s]+)'
+            r'(?i)(["\']?(?:password|passphrase)["\']?\s*[:=]\s*[\'"]?)([^\'",;\s]+)'
         )
 
-        # Pattern to match an RSA key block
+        # Pattern to match an private key block
         self.rsa_key_pattern = re.compile(
-            r"(-----BEGIN RSA PRIVATE KEY-----)(.*?)(-----END RSA PRIVATE KEY-----)",
+            r"-----BEGIN ([A-Z ]+ PRIVATE KEY)-----(.*?)-----END \1-----",
             re.DOTALL,
         )
 
@@ -30,12 +30,16 @@ class SensitiveDataFilter(logging.Filter):
         """
         if isinstance(message, str):
             message = self.sensitive_pattern.sub(r"\1****", message)
-            message = self.rsa_key_pattern.sub(r"\1\n****\n\3", message)
+            message = self.rsa_key_pattern.sub(
+                r"-----BEGIN \1-----\n****\n-----END \1-----", message
+            )
             return message
         elif isinstance(message, dict):
             return {k: self.redact(v) for k, v in message.items()}
         elif isinstance(message, list):
             return [self.redact(item) for item in message]
+        elif isinstance(message, tuple):
+            return tuple(self.redact(item) for item in message)
         return message
 
     def flatten_message(self, record):
