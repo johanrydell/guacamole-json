@@ -33,6 +33,9 @@ FROM python:3.12-slim
 # Set a fixed environment variable
 ENV PYTHONUNBUFFERED=1
 
+# Purge perl as it isn't needed
+RUN apt-get purge --allow-remove-essential -y perl-base && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Create the directories
 RUN mkdir -p /app /tls
 
@@ -45,8 +48,12 @@ COPY templates /app/templates/
 COPY static /app/static/
 
 # Install runtime dependencies
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+#COPY requirements.txt /app/
+#RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy installed Python libraries from build stage
+COPY --from=build /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=build /usr/local/bin /usr/local/bin
 
 # Add a non-root user
 RUN groupadd -r appuser && useradd --no-log-init -r -g appuser appuser
