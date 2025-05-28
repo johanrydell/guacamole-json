@@ -30,10 +30,8 @@ PROJECT_DEFAULTS: Dict[str, Any] = {
     "GUACAMOLE_REDIRECT_URL": "",
     "SSO": "true",
     "GUAC_LEGACY": "true",
+    "SSH_PARAMETERS": "",
     "DEFAULT_TIMEOUT": 3600 * 24,
-    "PRE_DRIVE_PATH": "/tmp/${GUAC_USERNAME}",
-    "PRE_RECORDING_PATH": "/tmp/${GUAC_USERNAME}",
-    "PRE_TYPESCRIPT_PATH": "/tmp/${GUAC_USERNAME}",
 }
 
 logger = logging.getLogger(__name__)

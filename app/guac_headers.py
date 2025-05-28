@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import time
@@ -6,6 +7,26 @@ from typing import Any, Dict
 from urllib.parse import unquote
 
 from config import load_config
+from custom_logging import setup_logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+DEFAULT_PARAMETERS = {"recording-path": "/tmp/${GUAC_USERNAME}"}
+
+DEFAULT_RDP_PARAMETERS = {
+    "port": "3389",
+    "security": "any",
+    "ignore-cert": "true",
+    "enable-drive": "true",
+    "drive-path": "/tmp/${GUAC_USERNAME}",
+    "create-drive-path": "true",
+    "enable-printing": "true",
+}
+
+DEFAULT_SSH_PARAMETERS = {
+    "typescript-path": "/tmp/${GUAC_USERNAME}",
+}
 
 # Load configurations
 config = load_config()
@@ -102,6 +123,34 @@ def resolve_vars(string: str, variables: dict) -> str:
     return re.sub(r"\$\{(\w+)\}", replacer, string)
 
 
+def load_json_parameters(config: dict, key: str) -> dict:
+    """
+    Safely load JSON parameters from a config dictionary.
+
+    Args:
+        config (dict): The source configuration dictionary.
+        key (str): The key whose value should be JSON-parsed.
+
+    Returns:
+        dict: The parsed JSON object, or an empty dict if invalid.
+    """
+    value = config.get(key)
+
+    if value is None:
+        logger.debug(f"No value found for key '{key}'. Skipping.")
+        return {}
+
+    try:
+        parsed = json.loads(value)
+        if not isinstance(parsed, dict):
+            logger.error(f"Loaded JSON for '{key}' is not a dictionary: {parsed}")
+            return {}
+        return parsed
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON for '{key}': {value}. Error: {e}")
+        return {}
+
+
 def parse_guacamole_url(url, wa_uid=None):
     # Construct JSON according to Guacamole specification
     parser = URLParser()
@@ -116,18 +165,49 @@ def parse_guacamole_url(url, wa_uid=None):
     port = url_dict.get("port", None)
 
     guac_config = {"protocol": protocol, "parameters": {"hostname": hostname}}
+    # update the set with default values
+    for key, value in DEFAULT_PARAMETERS.items():
+        guac_config["parameters"].setdefault(key, value)
 
     if protocol == "rdp":
-        default_rdp_parameters = {
-            "port": "3389",
-            "security": "any",
-            "ignore-cert": "true",
-            "enable-drive": "true",
-            "drive-path": "",
-            "create-drive-path": "true",
-            "enable-printing": "true",
-        }
-        guac_config["parameters"].update(default_rdp_parameters)
+        if config.get("RDP_PARAMETERS") is not None:
+            logging.debug(f"RDP_PARAMETERS: {config.get('RDP_PARAMETERS')}")
+            params = load_json_parameters(config, "RDP_PARAMETERS")
+            guac_config["parameters"].update(params)
+
+        # update the set with default values
+        for key, value in DEFAULT_RDP_PARAMETERS.items():
+            guac_config["parameters"].setdefault(key, value)
+
+    if protocol == "ssh":
+        if config.get("SSH_PARAMETERS") is not None:
+            logging.debug(f"SSH_PARAMETERS: {config.get('SSH_PARAMETERS')}")
+            params = load_json_parameters(config, "SSH_PARAMETERS")
+            guac_config["parameters"].update(params)
+
+        # update the set with default values
+        for key, value in DEFAULT_SSH_PARAMETERS.items():
+            guac_config["parameters"].setdefault(key, value)
+
+    if protocol == "vnc":
+        if config.get("VNC_PARAMETERS") is not None:
+            logging.debug(f"VNC_PARAMETERS: {config.get('VNC_PARAMETERS')}")
+            params = load_json_parameters(config, "VNC_PARAMETERS")
+            guac_config["parameters"].update(params)
+
+    if protocol == "telnet":
+        if config.get("TELNET_PARAMETERS") is not None:
+            logging.debug(f"TELNET_PARAMETERS: {config.get('TELNET_PARAMETERS')}")
+            params = load_json_parameters(config, "TELNET_PARAMETERS")
+            guac_config["parameters"].update(params)
+
+    if protocol == "KUBERNETES":
+        if config.get("KUBERNETES_PARAMETERS") is not None:
+            logging.debug(
+                f"KUBERNETES_PARAMETERS: {config.get('KUBERNETES_PARAMETERS')}"
+            )
+            params = load_json_parameters(config, "KUBERNETES_PARAMETERS")
+            guac_config["parameters"].update(params)
 
     if port:
         guac_config["parameters"]["port"] = port
@@ -139,27 +219,26 @@ def parse_guacamole_url(url, wa_uid=None):
     # Add any additional query parameters
     guac_config["parameters"].update(url_dict.get("arguments", {}))
 
-    drive_path = resolve_path(
-        config.get("PRE_DRIVE_PATH", ""),
-        guac_config["parameters"].get("drive-path", ""),
-    )
+    # Check if the path need modification using;
+    # recording-path, drive-path, typescript-path
 
-    recording_path = resolve_path(
-        config.get("PRE_RECORDING_PATH", ""),
-        guac_config["parameters"].get("recording-path", ""),
-    )
+    if guac_config["parameters"].get("pre-recording-path") is not None:
+        guac_config["parameters"]["recording-path"] = resolve_path(
+            guac_config["parameters"].get("pre-recording-path"),
+            guac_config["parameters"].get("recording-path"),
+        )
 
-    typescript_path = resolve_path(
-        config.get("PRE_TYPESCRIPT_PATH", ""),
-        guac_config["parameters"].get("typescript-path", ""),
-    )
+    if guac_config["parameters"].get("pre-drive-path") is not None:
+        guac_config["parameters"]["drive-path"] = resolve_path(
+            guac_config["parameters"].get("pre-drive-path"),
+            guac_config["parameters"].get("drive-path"),
+        )
 
-    if drive_path:
-        guac_config["parameters"]["drive-path"] = drive_path
-    if recording_path:
-        guac_config["parameters"]["recording-path"] = recording_path
-    if typescript_path:
-        guac_config["parameters"]["typescript-path"] = typescript_path
+    if guac_config["parameters"].get("pre-typescript-path") is not None:
+        guac_config["parameters"]["typescript-path"] = resolve_path(
+            guac_config["parameters"].get("pre-typescript-path"),
+            guac_config["parameters"].get("typescript-path"),
+        )
 
     guac_fixed_config = fix_newlines(guac_config)
 
@@ -203,6 +282,7 @@ if __name__ == "__main__":
     """
     Test code...
     """
+    setup_logging()
     wa_uid = "wa_jr"
     # Example list of URLs
     urls = [
@@ -261,6 +341,8 @@ if __name__ == "__main__":
                 indent=4,
             )
         )
+        print("--")
+        logger.info(parse_guacamole_url(url, wa_uid))
         print("-------------")
 
     """

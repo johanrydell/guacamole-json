@@ -103,6 +103,9 @@ async def get_file_by_name(filename: str, request: Request):
     Returns:
         dict or RedirectResponse: Processed JSON data or a redirect.
     """
+    if config.get("GUAC_LEGACY", "").lower() == "true":
+        templates.TemplateResponse("index.html", {"request": request})
+
     username, password = check_auth(request)  # Enforce authentication if required
 
     json_file = os.path.join(CONFIG_DIR, f"{filename}.json")
@@ -126,6 +129,9 @@ async def get_all_configs(request: Request):
     Returns:
         dict or RedirectResponse: Processed JSON data or a redirect.
     """
+    if config.get("GUAC_LEGACY", "").lower() == "true":
+        templates.TemplateResponse("index.html", {"request": request})
+
     username, password = check_auth(request)  # Enforce authentication if required
     json_data = all_unique_connections(CONFIG_DIR)
     return process_json_data(json_data, request, username, password)
@@ -142,6 +148,9 @@ async def test_basic_auth(request: Request):
     Returns:
         dict: A success message if authentication succeeds.
     """
+    if config.get("GUAC_LEGACY", "").lower() == "true":
+        templates.TemplateResponse("index.html", {"request": request})
+
     if USE_BASIC_AUTH:
         username, password = check_auth(request)  # Enforce authentication
         return {"message": f"{username}, authenticated successfully!"}
@@ -165,7 +174,7 @@ async def index(request: Request):
         guac = request.headers.get("guac", None)
         wa_uid = request.cookies.get("WA_UID", None)
         if guac:
-            logging.debug(f"guac_header_raw: {guac}")
+            logging.debug(config)
             guac_json = parse_guacamole_url(guac, wa_uid)
             logging.debug(f"guac_header: {guac_json}")
             return process_json_guac(guac_json)
@@ -174,13 +183,16 @@ async def index(request: Request):
 
 
 @app.get("/api/json-files", response_class=JSONResponse)
-async def get_json_files():
+async def get_json_files(request: Request):
     """
     API endpoint to retrieve the list of JSON files.
 
     Returns:
         dict: A list of JSON filenames (without extensions).
     """
+    if config.get("GUAC_LEGACY", "").lower() == "true":
+        templates.TemplateResponse("index.html", {"request": request})
+
     json_files = glob.glob(os.path.join(CONFIG_DIR, "*.json"))
     json_files.sort()  # Sort files alphabetically
     return {

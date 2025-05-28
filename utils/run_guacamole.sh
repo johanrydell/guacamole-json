@@ -17,7 +17,7 @@ error() {
 
 # Default values
 GUACD_HOSTNAME="${GUACD_HOSTNAME:-guacd}"
-CONTAINER_IMAGE="${CONTAINER_IMAGE:-docker.io/guacamole/guacamole:latest}"
+CONTAINER_IMAGE="${CONTAINER_IMAGE:-docker.io/guacamole/guacamole:1.5.5}"
 CONTAINER_NAME="guacamole"
 CONTAINER_PORT="${CONTAINER_PORT:-8080}"
 BACKGROUND=" -d "

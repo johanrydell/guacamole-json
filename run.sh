@@ -169,7 +169,14 @@ fi
 
 # Podman environment and volume options
 mkdir -p ${SERVICE_DIR} ${SERVICE_FILES_DIR}
-CONTAINER_ENV=" -e JSON_SECRET_KEY=${JSON_SECRET_KEY} -e CONFIG_DIR=${CONTAINER_FILES_DIR} -e GUACAMOLE_URL=${GUACAMOLE_URL} ${LOG} -e SSO=${SSO} -e PRE_DRIVE_PATH=/drive/\${WA_UID} "
+CONTAINER_ENV="\
+ -e JSON_SECRET_KEY=${JSON_SECRET_KEY} \
+ -e CONFIG_DIR=${CONTAINER_FILES_DIR} \
+ -e GUACAMOLE_URL=${GUACAMOLE_URL} \
+ ${LOG} \
+ -e SSO=${SSO} \
+ -e SSH_PARAMETERS='{\"print\": 12}' \
+"
 CONTAINER_VOL=" -v ${SERVICE_FILES_DIR}:${CONTAINER_FILES_DIR} "
 
 # Verify TLS certificates exist
@@ -194,6 +201,7 @@ stop_systemd
 sleep 1
 log "Running container ${CONTAINER_NAME}..."
 #podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${LOG} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p ${CONTAINER_PORT}:8000 ${CONTAINER_IMAGE} || error "Failed to start container ${CONTAINER_NAME}."
+echo "podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${LOG} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p ${CONTAINER_PORT}:8000 ${CONTAINER_IMAGE} "
 podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${LOG} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p ${CONTAINER_PORT}:8000 ${CONTAINER_IMAGE} || error "Failed to start container ${CONTAINER_NAME}."
 log "Done, container ${CONTAINER_NAME} has been started."
 
