@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from urllib.parse import unquote
 
 from config import load_config
@@ -123,32 +123,55 @@ def resolve_vars(string: str, variables: dict) -> str:
     return re.sub(r"\$\{(\w+)\}", replacer, string)
 
 
-def load_json_parameters(config: dict, key: str) -> dict:
+def load_json_parameters(
+    config: Dict[str, Any], key: str, fallback: Optional[Dict] = None
+) -> Dict:
     """
-    Safely load JSON parameters from a config dictionary.
+    Safely load and parse a JSON object from a configuration dictionary.
 
     Args:
-        config (dict): The source configuration dictionary.
-        key (str): The key whose value should be JSON-parsed.
+        config (dict): Source configuration.
+        key (str): Key to look up in the config whose value should
+                  be a JSON string.
+        fallback (dict, optional): Optional fallback dict to return
+                                  if parsing fails. Defaults to empty dict.
 
     Returns:
-        dict: The parsed JSON object, or an empty dict if invalid.
+        dict: Parsed JSON dictionary if valid, otherwise fallback or empty dict.
     """
+    fallback = fallback or {}
+
     value = config.get(key)
 
     if value is None:
-        logger.debug(f"No value found for key '{key}'. Skipping.")
-        return {}
+        logger.debug(f"Key '{key}' not in config. Using fallback.")
+        return fallback
+
+    if isinstance(value, dict):
+        # Already a dict, no parsing needed
+        return value
+
+    if not isinstance(value, str):
+        logger.error(
+            f"Expected string or dict for key '{key}',"
+            f" got {type(value).__name__}. Using fallback."
+        )
+        return fallback
 
     try:
         parsed = json.loads(value)
         if not isinstance(parsed, dict):
-            logger.error(f"Loaded JSON for '{key}' is not a dictionary: {parsed}")
-            return {}
+            logger.error(
+                f"JSON loaded from key '{key}' is not a"
+                f" dictionary. Got: {type(parsed).__name__}"
+            )
+            return fallback
         return parsed
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON for '{key}': {value}. Error: {e}")
-        return {}
+        logger.error(
+            f"JSON decoding failed for key '{key}': {e}. " f"Raw value: {repr(value)}"
+        )
+        return fallback
 
 
 def parse_guacamole_url(url, wa_uid=None):

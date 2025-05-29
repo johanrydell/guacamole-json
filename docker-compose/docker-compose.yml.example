@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  guacamole:
+    image: docker.io/guacamole/guacamole:1.5.5
+    container_name: guacamole
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - BAN_ENABLED=false
+      - JSON_ENABLED=true
+      - GUACD_HOSTNAME=guacd
+      - JSON_SECRET_KEY=${JSON_SECRET_KEY}  # Dynamically loaded from .env
+    depends_on:
+      - guacd
+    networks:
+      - guacnet
+
+  guacd:
+    image: docker.io/guacamole/guacd:1.5.5
+    container_name: guacd
+    restart: unless-stopped
+    networks:
+      - guacnet
+
+  guacamole-json:
+    image: localhost/guacamole-json:latest
+    container_name: guacamole-json
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - GUACAMOLE_URL=http://nx-docker.ezotp.com:8080
+      - GUACAMOLE_REDIRECT_URL=http://172.16.2.33:8080/guacamole/#/
+      - PRE_DRIVE_PATH=/tmp/$${WA_UID}/
+      - SSO=false
+      - LOG_LEVEL=DEBUG
+    networks:
+      - guacnet
+
+networks:
+  guacnet:
+    driver: bridge
+

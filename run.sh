@@ -17,24 +17,22 @@ error() {
 SHOW_LOGS=false
 ACTIVATE_SYSTEMD=false
 SERVICE_DIR="${HOME}/guacamole-json-service"
-SERVICE_FILES_DIR="${SERVICE_DIR}/files"
 # TLS
 TLS_DIR="${SERVICE_DIR}/tls"
 TLS_CERT="fullchain.pem"
 TLS_KEY="privkey.pem"
 # Container settings
-GUACAMOLE_URL=http://nx-work.rydell.se:8080
-SSO="true"
+GUACAMOLE_URL=${GUACAMOLE_URL:-"http://localhost:8080"}
 GUACAMOLE_JSON_KEY=""
 CONTAINER_PORT=8000
 CONTAINER_NAME=guacamole-json
 CONTAINER_VERSION="latest"
 CONTAINER_BASE_IMAGE="localhost/guacamole-json"
 CONTAINER_IMAGE="localhost/guacamole-json:${CONTAINER_VERSION}"
-CONTAINER_FILES_DIR="/files"
 CONTAINER_TLS_DIR="/tls"
 BACKGROUND=" -d "
 
+LOG_LEVEL=INFO
 
 # Parse command-line options
 for arg in "$@"; do
@@ -52,7 +50,7 @@ for arg in "$@"; do
             shift
             ;;
         --debug)
-            LOG=" -e LOG_LEVEL=DEBUG "
+            LOG_LEVEL=DEBUG
             shift
             ;;
         --no-sso)
@@ -80,7 +78,6 @@ for arg in "$@"; do
             echo "  --log               Show container logs after starting."
             echo "  --activate          Activate systemd service after starting the container."
             echo "  --debug             Set log level to DEBUG."
-            echo "  --no-sso            Disable single sign-on mode."
             echo "  --help, -h          Show this help message."
             exit 0
             ;;
@@ -167,17 +164,10 @@ if [[ ! "${JSON_SECRET_KEY}" =~ ^[a-fA-F0-9]{32}$ ]]; then
     error "Invalid JSON_SECRET_KEY format."
 fi
 
+
 # Podman environment and volume options
-mkdir -p ${SERVICE_DIR} ${SERVICE_FILES_DIR}
-CONTAINER_ENV="\
- -e JSON_SECRET_KEY=${JSON_SECRET_KEY} \
- -e CONFIG_DIR=${CONTAINER_FILES_DIR} \
- -e GUACAMOLE_URL=${GUACAMOLE_URL} \
- ${LOG} \
- -e SSO=${SSO} \
- -e SSH_PARAMETERS='{\"print\": 12}' \
-"
-CONTAINER_VOL=" -v ${SERVICE_FILES_DIR}:${CONTAINER_FILES_DIR} "
+mkdir -p ${SERVICE_DIR} 
+
 
 # Verify TLS certificates exist
 mkdir -p ${TLS_DIR}
@@ -200,9 +190,18 @@ log "Stopping any old container ${CONTAINER_NAME}..."
 stop_systemd
 sleep 1
 log "Running container ${CONTAINER_NAME}..."
-#podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${LOG} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p ${CONTAINER_PORT}:8000 ${CONTAINER_IMAGE} || error "Failed to start container ${CONTAINER_NAME}."
-echo "podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${LOG} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p ${CONTAINER_PORT}:8000 ${CONTAINER_IMAGE} "
-podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} ${LOG} ${TLS_ENV} ${CONTAINER_ENV} ${CONTAINER_VOL} -p ${CONTAINER_PORT}:8000 ${CONTAINER_IMAGE} || error "Failed to start container ${CONTAINER_NAME}."
+
+podman run ${BACKGROUND} --rm --replace --name ${CONTAINER_NAME} \
+       ${TLS_ENV} \
+       -e JSON_SECRET_KEY=${JSON_SECRET_KEY} \
+       -e GUACAMOLE_URL=${GUACAMOLE_URL} \
+       -e LOG_LEVEL=${LOG_LEVEL} \
+       -e SSH_PARAMETERS='{}' \
+       -e RDP_PARAMETERS='{}' \
+       -p ${CONTAINER_PORT}:8000 \
+       ${CONTAINER_IMAGE}
+    #|| error "Failed to start container ${CONTAINER_NAME}."
+
 log "Done, container ${CONTAINER_NAME} has been started."
 
 # Activate systemd if requested
